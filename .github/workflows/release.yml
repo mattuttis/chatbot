@@ -17,7 +17,10 @@ jobs:
   release:
     runs-on: ubuntu-24.04-arm
     steps:
+      # GITHUB_TOKEN can't go on the branch rule's exception list, so the tag commit uses a deploy key.
       - uses: actions/checkout@v7
+        with:
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
       - uses: actions/setup-java@v6
         with:
@@ -50,6 +53,10 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
         run: |
           yq -i '.backend.image.tag = strenv(TAG)' deploy/envs/test/values.yaml
+          if git diff --quiet; then
+            echo "Tag unchanged, nothing to commit"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "Deploy chatbot-backend $TAG to test"
