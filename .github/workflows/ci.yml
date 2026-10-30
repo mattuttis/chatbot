@@ -149,7 +149,7 @@ jobs:
             of what you changed with `gh pr comment`. If you can't fix an issue safely, change nothing
             and say so in a comment.
           claude_args: |
-            --allowedTools "Edit,Write,Read,Glob,Grep,Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git status:*),Bash(git diff:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
+            --allowedTools "Edit,Write,Read,Glob,Grep,Bash(git add:*),Bash(git rm:*),Bash(git commit:*),Bash(git push:*),Bash(git status:*),Bash(git diff:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
 
   claude-fix-stopped:
     needs: claude-review
