@@ -8,3 +8,9 @@ spring:
         options:
           model: claude-opus-5-5
           max-tokens: 16000
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
