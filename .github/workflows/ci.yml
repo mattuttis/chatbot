@@ -76,6 +76,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+    outputs:
+      critical-issues: ${{ steps.verdict.outputs.critical-issues }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -87,6 +89,8 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
+          # Lets the review run again after a claude-fix commit.
+          allowed_bots: claude
           prompt: |
             Review pull request #${{ github.event.pull_request.number }} in ${{ github.repository }}.
             The repo holds a Spring Boot backend, an Angular frontend and deployment config.
@@ -102,9 +106,63 @@ jobs:
             --json-schema '{"type":"object","properties":{"critical_issues":{"type":"boolean"}},"required":["critical_issues"]}'
 
       - name: Fail on critical issues
+        id: verdict
         env:
           RESULT: ${{ steps.review.outputs.structured_output }}
-        run: echo "$RESULT" | jq -e '.critical_issues == false'
+        run: |
+          CRITICAL=$(echo "$RESULT" | jq -r '.critical_issues')
+          echo "critical-issues=$CRITICAL" >> "$GITHUB_OUTPUT"
+          test "$CRITICAL" = "false"
+
+  # One attempt per PR: the claude-fix label stops a second one.
+  claude-fix:
+    needs: claude-review
+    if: always() && needs.claude-review.outputs.critical-issues == 'true' && !contains(github.event.pull_request.labels.*.name, 'claude-fix')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Mark the fix attempt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr edit "$PR_URL" --add-label claude-fix
+
+      # Uses the Claude GitHub App's token, because commits pushed with GITHUB_TOKEN don't start CI.
+      - name: Claude fix
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            The review of pull request #${{ github.event.pull_request.number }} in ${{ github.repository }}
+            found critical issues. Read its comments with `gh pr view --comments` and fix only those
+            critical issues, with the smallest change that works. Don't change anything under .github/.
+
+            Commit the fix and push it to the branch ${{ github.head_ref }}. Then post a short summary
+            of what you changed with `gh pr comment`. If you can't fix an issue safely, change nothing
+            and say so in a comment.
+          claude_args: |
+            --allowedTools "Edit,Write,Read,Glob,Grep,Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(git status:*),Bash(git diff:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
+
+  claude-fix-stopped:
+    needs: claude-review
+    if: always() && needs.claude-review.outputs.critical-issues == 'true' && contains(github.event.pull_request.labels.*.name, 'claude-fix')
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Ask for help
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr comment "$PR_URL" --body "Claude has already tried to fix this PR and critical issues remain. Please fix them by hand."
 
   all-checks-passed:
     needs: [changes, backend-build, frontend-build, claude-review]
