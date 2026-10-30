@@ -178,6 +178,32 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: gh pr comment "$PR_URL" --body "Claude has already tried to fix this PR and critical issues remain. Please fix them by hand."
 
+  # Stays out of all-checks-passed, so a Slack problem can't block a merge.
+  notify-review:
+    needs: claude-review
+    if: always() && needs.claude-review.result != 'skipped'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post the verdict to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RESULT: ${{ needs.claude-review.result }}
+          CRITICAL: ${{ needs.claude-review.outputs.critical-issues }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          PR="<$PR_URL|PR #$NUMBER>"
+          if [ "$RESULT" = "success" ]; then
+            TEXT="✅ Claude accepted $PR"
+          elif [ "$CRITICAL" = "true" ]; then
+            TEXT="❌ Claude found critical issues on $PR"
+          else
+            TEXT="⚠️ Claude review failed on $PR"
+          fi
+
+          jq -n --arg text "$TEXT" '{text: $text}' \
+            | curl -fsS -H 'Content-Type: application/json' --data @- "$SLACK_WEBHOOK_URL"
+
   all-checks-passed:
     needs: [changes, backend-build, frontend-build, claude-review]
     if: always()
