@@ -4,3 +4,9 @@ backend:
     tag: ""
   replicas: 1
   apiKeySecret: chatbot-claude
+
+frontend:
+  image:
+    repository: ghcr.io/mattuttis/chatbot-frontend
+    tag: ""
+  replicas: 1
