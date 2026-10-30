@@ -1,0 +1,4 @@
+apiVersion: v2
+name: chatbot
+description: Spring AI chatbot
+version: 0.1.0
