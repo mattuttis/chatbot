@@ -449,6 +449,7 @@ Each part has a reason:
 - **`id-token: write`:** lets the action exchange a GitHub identity token for the App's token.
 - **The `claude-fix` label:** limits Claude to one attempt per PR.
 - **`claude-fix-stopped`:** if critical issues remain, it comments and asks you to step in.
+- **Push check:** the action can succeed without pushing anything, so a final step compares the branch with the original commit. If nothing changed, the job fails and comments.
 - **`allowed_bots: claude,github-actions`:** bots can't trigger the action by default, so this lets the review run on the fix commit. The fix commit arrives as `github-actions`, so that name is needed too. Only the review job has this setting, and it can't push code.
 - **Allowed tools:** Claude can edit files and use a short list of `git` and `gh` commands. `git rm` is on that list because a fix may need to delete a file.
 - **No fix on forks:** the review is skipped on fork PRs, so `claude-fix` never gets a critical result to act on.
@@ -511,7 +512,7 @@ These problems are the most useful part of the day, and good material for an int
 | Secret held `kubectl...` | The clipboard still held the command | `op read` from 1Password | Verify a secret's start, not all of it |
 | First auto-fix did nothing | No allowed tool could delete a file | Add `git rm` | Allowed tools limit what Claude can do |
 | Review stopped on a fix commit | The commit came from `github-actions`, which wasn't an allowed bot (`Workflow initiated by non-human actor`) | Add it to `allowed_bots` | Check which identity a commit really uses |
-| Fix job reported success with no commit | A denied action doesn't fail the job | Still open, see section 16 | A green job doesn't prove the work happened |
+| Fix job reported success with no commit | A denied action doesn't fail the job | A step that checks a commit was pushed | A green job doesn't prove the work happened |
 | New pod failed briefly | Chart arrived before its image | Accepted for test, see section 16 | Chart and image can arrive at different times |
 | Rollback plan wouldn't work | The old image had no health endpoint | Roll back to a newer image | A chart change can make old images unusable |
 | First startup check did nothing | An unresolved placeholder doesn't stop Spring | Explicit check in code, then tested by hand | Run the failure case, not just the tests |
@@ -817,10 +818,6 @@ gh label create claude-fix -R <your-user>/chatbot --color 0f5cc0
 
 - `/api/chat` has no login or rate limit, so anyone who can reach it can spend your API credit.
 - A real hosted environment is needed. The current one stops when your laptop does.
-
-**Auto-fix**
-
-- A fix job can finish as a success without committing anything, and without saying so.
 
 **App**
 

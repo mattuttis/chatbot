@@ -151,6 +151,20 @@ jobs:
           claude_args: |
             --allowedTools "Edit,Write,Read,Glob,Grep,Bash(git add:*),Bash(git rm:*),Bash(git commit:*),Bash(git push:*),Bash(git status:*),Bash(git diff:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
 
+      # The action can succeed without pushing anything, for example after a denied tool.
+      - name: Check that a fix was pushed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch -q origin "$HEAD_REF"
+          if [ "$(git rev-parse FETCH_HEAD)" = "$HEAD_SHA" ]; then
+            gh pr comment "$PR_URL" --body "Claude didn't push a fix for the critical issues on this PR. Please fix them by hand."
+            exit 1
+          fi
+
   claude-fix-stopped:
     needs: claude-review
     if: always() && needs.claude-review.outputs.critical-issues == 'true' && contains(github.event.pull_request.labels.*.name, 'claude-fix')
