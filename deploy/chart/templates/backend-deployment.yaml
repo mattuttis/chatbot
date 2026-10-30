@@ -24,10 +24,12 @@ spec:
                   name: {{ .Values.backend.apiKeySecret }}
                   key: api-key
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /actuator/health/readiness
               port: 8080
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /actuator/health/liveness
               port: 8080
             initialDelaySeconds: 30
           resources:
