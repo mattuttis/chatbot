@@ -1,0 +1,236 @@
+<title>Spring AI Chatbot Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600;700&display=swap">
+<style>
+  /* Layout: a single column of two wide figures, runtime first, then delivery. */
+  :root {
+    --bg: #f2f5f8;
+    --fg: #15232e;
+    --muted: #4f6272;
+    --zone: #e3eaf0;
+    --box: #ffffff;
+    --line: #9fb0be;
+    --accent: #0f5cc0;
+    --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10181f;
+      --fg: #e6edf3;
+      --muted: #9db0bf;
+      --zone: #18232c;
+      --box: #223039;
+      --line: #4d6272;
+      --accent: #7db4ff;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10181f;
+    --fg: #e6edf3;
+    --muted: #9db0bf;
+    --zone: #18232c;
+    --box: #223039;
+    --line: #4d6272;
+    --accent: #7db4ff;
+    color-scheme: dark;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.55;
+  }
+  main {
+    max-width: 1040px;
+    margin: 0 auto;
+    display: grid;
+    gap: 48px;
+    padding-block: 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  header { display: grid; gap: 8px; }
+  h1 { margin: 0; font-size: 2rem; line-height: 1.2; font-weight: 700; text-wrap: balance; }
+  h2 { margin: 0; font-size: 1.25rem; line-height: 1.3; font-weight: 600; text-wrap: balance; }
+  header p { margin: 0; max-width: 65ch; color: var(--muted); }
+  section { display: grid; gap: 12px; min-width: 0; }
+  figure { margin: 0; display: grid; gap: 12px; min-width: 0; }
+  .scroll { overflow-x: auto; min-width: 0; }
+  svg { display: block; width: 100%; min-width: 760px; height: auto; color: var(--fg); }
+  figcaption { max-width: 70ch; color: var(--muted); }
+
+  .zone { fill: var(--zone); }
+  .box { fill: var(--box); stroke: var(--line); stroke-width: 1; }
+  .edge { fill: none; stroke: currentColor; stroke-width: 1.5; }
+  .reply { stroke-dasharray: 6 5; }
+  .pull { fill: none; stroke: var(--accent); stroke-width: 2; }
+  .zone-label { fill: var(--muted); font: 500 11px var(--font-mono); letter-spacing: 0.08em; }
+  .title { fill: var(--fg); font: 600 13px var(--font-body); text-anchor: middle; }
+  .sub { fill: var(--muted); font: 400 11px var(--font-mono); text-anchor: middle; }
+  .sub.key { fill: var(--accent); font-weight: 500; }
+  .label { fill: var(--fg); font: 400 12px var(--font-mono); text-anchor: middle; }
+  .label.left { text-anchor: start; }
+  .label.pull-label { fill: var(--accent); font-weight: 500; }
+  .note { fill: var(--muted); font: 400 11px var(--font-mono); text-anchor: middle; }
+</style>
+
+<main>
+  <header>
+    <h1>Spring AI Chatbot Architecture</h1>
+    <p>The planned setup from the project summary: how a chat message travels at runtime, and how a code change reaches the local cluster.</p>
+  </header>
+
+  <section>
+    <h2>A chat message at runtime</h2>
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 960 336" role="img" aria-label="The Angular UI in the browser sends a chat message through the Minikube Ingress to the Spring Boot backend, which alone holds the Claude API key, calls the Claude API, and streams the reply back to the browser.">
+          <defs>
+            <marker id="rt-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto">
+              <path d="M0 0 L10 5 L0 10 Z" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <rect class="zone" x="16" y="16" width="164" height="304" rx="10"/>
+          <rect class="zone" x="268" y="16" width="444" height="304" rx="10"/>
+          <rect class="zone" x="788" y="16" width="156" height="304" rx="10"/>
+          <text class="zone-label" x="30" y="38">YOUR BROWSER</text>
+          <text class="zone-label" x="288" y="38">MINIKUBE CLUSTER</text>
+          <text class="zone-label" x="804" y="38">ANTHROPIC</text>
+
+          <rect class="box" x="30" y="150" width="136" height="64" rx="6"/>
+          <text class="title" x="98" y="178">Angular chat UI</text>
+          <text class="sub" x="98" y="194">no API key</text>
+
+          <rect class="box" x="288" y="142" width="110" height="80" rx="6"/>
+          <text class="title" x="343" y="178">Ingress</text>
+          <text class="sub" x="343" y="194">path routing</text>
+
+          <rect class="box" x="486" y="70" width="210" height="64" rx="6"/>
+          <text class="title" x="591" y="98">Frontend</text>
+          <text class="sub" x="591" y="114">nginx, Angular static files</text>
+
+          <rect class="box" x="486" y="210" width="210" height="72" rx="6"/>
+          <text class="title" x="591" y="242">Spring Boot backend</text>
+          <text class="sub key" x="591" y="258">Spring AI, holds API key</text>
+
+          <rect class="box" x="804" y="210" width="132" height="72" rx="6"/>
+          <text class="title" x="870" y="250">Claude API</text>
+
+          <path class="edge" d="M166 166 H288" marker-end="url(#rt-arrow)"/>
+          <text class="label" x="224" y="159">chat message</text>
+          <path class="edge reply" d="M288 198 H166" marker-end="url(#rt-arrow)"/>
+          <text class="label" x="224" y="215">SSE reply</text>
+
+          <path class="edge" d="M398 162 H442 V102 H486" marker-end="url(#rt-arrow)"/>
+          <text class="label" x="464" y="95">/</text>
+          <path class="edge" d="M398 190 H442 V232 H486" marker-end="url(#rt-arrow)"/>
+          <text class="label" x="464" y="225">/api</text>
+          <path class="edge reply" d="M486 264 H343 V222" marker-end="url(#rt-arrow)"/>
+          <text class="label" x="414" y="281">streamed reply</text>
+
+          <path class="edge" d="M696 232 H804" marker-end="url(#rt-arrow)"/>
+          <text class="label" x="750" y="225">prompt</text>
+          <path class="edge reply" d="M804 264 H696" marker-end="url(#rt-arrow)"/>
+          <text class="label" x="750" y="281">stream</text>
+        </svg>
+      </div>
+      <figcaption>Only the backend talks to Claude, so the API key never reaches the browser. The Ingress serves both the UI and the API from one origin, which avoids CORS. Dashed lines show the reply streaming back word by word.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>A code change reaching the cluster</h2>
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 960 426" role="img" aria-label="A pull request runs build and Claude review checks in parallel, then merges to main after your review. A release job pushes the image to ghcr.io and commits the new tag to deploy/. Argo CD inside Minikube watches Git and applies the chart, and the pods pull the image, so every connection starts from inside the cluster.">
+          <defs>
+            <marker id="cd-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto">
+              <path d="M0 0 L10 5 L0 10 Z" fill="currentColor"/>
+            </marker>
+            <marker id="cd-arrow-pull" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto">
+              <path d="M0 0 L10 5 L0 10 Z" fill="var(--accent)"/>
+            </marker>
+          </defs>
+
+          <rect class="zone" x="16" y="16" width="620" height="394" rx="10"/>
+          <rect class="zone" x="716" y="186" width="228" height="224" rx="10"/>
+          <text class="zone-label" x="32" y="38">GITHUB</text>
+          <text class="zone-label" x="736" y="208">MINIKUBE ON YOUR LAPTOP</text>
+
+          <path class="pull" d="M740 70 H700" marker-end="url(#cd-arrow-pull)"/>
+          <text class="label left pull-label" x="752" y="66">started from</text>
+          <text class="label left pull-label" x="752" y="82">inside the cluster</text>
+          <path class="edge" d="M740 116 H700" marker-end="url(#cd-arrow)"/>
+          <text class="label left" x="752" y="120">pipeline step</text>
+
+          <rect class="box" x="32" y="80" width="96" height="60" rx="6"/>
+          <text class="title" x="80" y="115">Pull request</text>
+
+          <rect class="box" x="166" y="56" width="130" height="50" rx="6"/>
+          <text class="title" x="231" y="77">Build and test</text>
+          <text class="sub" x="231" y="93">Maven, Angular</text>
+
+          <rect class="box" x="166" y="118" width="130" height="50" rx="6"/>
+          <text class="title" x="231" y="139">Claude review</text>
+          <text class="sub" x="231" y="155">fails on critical</text>
+          <text class="note" x="231" y="185">in parallel</text>
+
+          <rect class="box" x="336" y="80" width="136" height="60" rx="6"/>
+          <text class="title" x="404" y="106">All checks passed</text>
+          <text class="sub" x="404" y="122">then your review</text>
+
+          <rect class="box" x="512" y="80" width="108" height="60" rx="6"/>
+          <text class="title" x="566" y="115">Merge to main</text>
+
+          <path class="edge" d="M128 110 H147 V81 H166" marker-end="url(#cd-arrow)"/>
+          <path class="edge" d="M128 110 H147 V143 H166" marker-end="url(#cd-arrow)"/>
+          <path class="edge" d="M296 81 H316 V110 H336" marker-end="url(#cd-arrow)"/>
+          <path class="edge" d="M296 143 H316 V110 H336" marker-end="url(#cd-arrow)"/>
+          <path class="edge" d="M472 110 H512" marker-end="url(#cd-arrow)"/>
+          <path class="edge" d="M566 140 V204 H205 V268" marker-end="url(#cd-arrow)"/>
+
+          <rect class="box" x="120" y="268" width="170" height="80" rx="6"/>
+          <text class="title" x="205" y="298">Release job</text>
+          <text class="sub" x="205" y="314">runs on merge</text>
+          <text class="sub" x="205" y="330">tag 1.4.0-3f2a9c1</text>
+
+          <rect class="box" x="456" y="226" width="164" height="60" rx="6"/>
+          <text class="title" x="538" y="252">ghcr.io</text>
+          <text class="sub" x="538" y="268">public images</text>
+
+          <rect class="box" x="456" y="330" width="164" height="60" rx="6"/>
+          <text class="title" x="538" y="356">deploy/ on main</text>
+          <text class="sub" x="538" y="372">Helm chart, image tags</text>
+
+          <path class="edge" d="M290 292 H372 V256 H456" marker-end="url(#cd-arrow)"/>
+          <text class="label" x="414" y="249">push image</text>
+          <path class="edge" d="M290 324 H372 V360 H456" marker-end="url(#cd-arrow)"/>
+          <text class="label" x="414" y="353">commit tag</text>
+
+          <rect class="box" x="736" y="226" width="188" height="60" rx="6"/>
+          <text class="title" x="830" y="252">Running pods</text>
+          <text class="sub" x="830" y="268">public arm64 images</text>
+
+          <rect class="box" x="736" y="330" width="188" height="60" rx="6"/>
+          <text class="title" x="830" y="356">Argo CD</text>
+          <text class="sub" x="830" y="372">runs in the cluster</text>
+
+          <path class="pull" d="M736 256 H620" marker-end="url(#cd-arrow-pull)"/>
+          <text class="label pull-label" x="676" y="249">pull image</text>
+          <path class="pull" d="M736 360 H620" marker-end="url(#cd-arrow-pull)"/>
+          <text class="label pull-label" x="676" y="353">watch Git</text>
+
+          <path class="edge" d="M830 330 V286" marker-end="url(#cd-arrow)"/>
+          <text class="label left" x="838" y="312">apply chart</text>
+        </svg>
+      </div>
+      <figcaption>Blue arrows show who starts each connection, and both start inside Minikube, so GitHub never has to reach your laptop. To deploy, the release job changes one tag in <code>deploy/</code> and Argo CD does the rest. Rolling back means reverting that commit.</figcaption>
+    </figure>
+  </section>
+</main>
