@@ -82,7 +82,7 @@ chatbot/
 ├── deploy/
 │   ├── argocd/application.yaml   Tells Argo CD what to deploy
 │   ├── chart/                    Helm chart for both apps
-│   └── envs/test/values.yaml     Image tags for the test environment
+│   └── envs/test/values.yaml     Image tags, only on the release/test branch
 ├── AI Chatbots, ... Summary.md   Decisions and the implementation plan
 ├── architecture.png, ci-pipeline.png   Diagrams
 └── how-it-works.md            This document
@@ -214,7 +214,7 @@ Signals are Angular's way of tracking state. When a signal changes, Angular upda
 
 ## 5. Running in Kubernetes
 
-Helm turns the templates in `deploy/chart` and the tags in `deploy/envs/test/values.yaml` into these resources:
+Helm turns the templates in `deploy/chart` and the tags in `deploy/envs/test/values.yaml`, both from the `release/test` branch, into these resources:
 
 ```mermaid
 flowchart TD
@@ -299,38 +299,39 @@ flowchart LR
 - 0 approvals are required, because GitHub doesn't let you approve your own PR. Your click on Merge is the human approval.
 - `all-checks-passed` must be green.
 - No force-pushes and no branch deletion.
-- Deploy keys are on the exception list, for the bot's tag commits.
 
 ## 7. The release pipeline
 
-`release.yml` runs when a merge changes `backend/` or `frontend/`. It doesn't rerun the tests, because CI already ran them on the PR.
+`release.yml` runs when a merge changes `backend/`, `frontend/` or `deploy/chart/`. It doesn't rerun the tests, because CI already ran them on the PR.
 
 ```mermaid
 flowchart TD
     M["Merge to main"] --> F["paths-filter: what changed?"]
     F -->|"backend"| B["Build and push chatbot-backend"]
     F -->|"frontend"| N["Build and push chatbot-frontend"]
-    B --> C["Update tags in deploy/envs/test/values.yaml"]
+    F -->|"chart only"| C
+    B --> C["Copy the chart and update the tags"]
     N --> C
-    C --> P["Push commit to main with the deploy key"]
+    C --> P["One commit on release/test"]
     P --> A["Argo CD sees the commit and deploys"]
 ```
 
-- **One job on purpose:** the tags are committed only at the very end. If one image fails, nothing deploys, so a change that needs both apps can't deploy halfway. A failed run can leave an unused image behind, and a rerun fixes that.
+- **Chart and image arrive together:** Argo CD watches `release/test`, not `main`, and only this pipeline updates that branch. The chart and new tags land in one commit, after the images exist.
+- **One job on purpose:** the release branch is updated only at the very end. If one image fails, nothing deploys, so a change that needs both apps can't deploy halfway. A failed run can leave an unused image behind, and a rerun fixes that.
 - **Image tags:** version plus commit, such as `0.1.0-2e78a63`. Every release gets a unique tag. `latest` would be a mistake here, because Argo CD wouldn't see a change.
-- **No loop:** the tag commit only touches `deploy/`, and this workflow only runs for `backend/` and `frontend/`.
-- **One at a time:** `concurrency: release` stops two merges from racing to commit tags.
-- **Why a deploy key:** see section 10.
+- **No loop:** this workflow only runs on `main`, and it commits to `release/test`.
+- **One at a time:** `concurrency: release` stops two merges from racing on the release branch.
+- **Simple credentials:** `release/test` isn't locked, so the built-in `GITHUB_TOKEN` can push to it.
 
 The two pipelines at a glance:
 
 | | CI (`ci.yml`) | Release (`release.yml`) |
 |---|---|---|
-| **Trigger** | PR to `main` | Merge that changes an app |
+| **Trigger** | PR to `main` | Merge that changes an app or the chart |
 | **Question** | Is this safe to merge? | What's the new version? |
-| **Result** | A green or red check | Images and a tag commit |
+| **Result** | A green or red check | Images and a commit on `release/test` |
 | **Tests** | Yes | No, already done |
-| **Changes `main`** | No | Yes, the tag file only |
+| **Changes `main`** | No | No |
 
 ## 8. GitOps with Argo CD
 
@@ -338,7 +339,7 @@ The two pipelines at a glance:
 
 ```mermaid
 sequenceDiagram
-    participant G as GitHub main
+    participant G as GitHub release/test
     participant A as Argo CD
     participant K as Kubernetes
     participant R as GHCR
@@ -358,7 +359,7 @@ sequenceDiagram
 - **`automated` sync:** changes in Git deploy without a click.
 - **`selfHeal`:** if someone changes the cluster by hand, Argo CD puts it back.
 - **`prune`:** resources removed from Git are removed from the cluster.
-- **Rollback is a Git revert.** Reverting a tag commit through a PR returned the pod to the old image in about a minute: 47 and 73 seconds in our two tests.
+- **Rollback is a Git revert on `release/test`.** It needs no PR, so it's fast, but it also skips the checks. Our earlier rollbacks took 47 and 73 seconds. The image you return to must support the chart you return to, and a revert brings both back.
 
 Updates took between 2 and 5 minutes from tag commit to running pod, with no manual refresh. It varies because Argo CD checks Git on a timer.
 
@@ -464,11 +465,8 @@ No secret lives in Git or in an image.
 |---|---|---|---|---|
 | Anthropic API key | Pays for the chatbot's Claude calls | 1Password and Kubernetes Secret `chatbot-claude` | Backend | Until you revoke it |
 | `CLAUDE_CODE_OAUTH_TOKEN` | Runs Claude in CI on your Pro plan | GitHub Actions secret | `claude-review`, `claude-fix` | 1 year |
-| `RELEASE_DEPLOY_KEY` | SSH key that can push to this repo | GitHub Actions secret | `release.yml` | Until you delete it |
 | `GITHUB_TOKEN` | Temporary token for each run | Created by GitHub | Most jobs | One run |
 | Claude GitHub App | Lets fix commits start CI | Installed on this repo | `claude-fix` | Until you remove it |
-
-**Why a deploy key?** `main` is locked, and the bot needs to commit tags to it. `GITHUB_TOKEN` can't go on the ruleset's exception list, so GitHub refused it. A deploy key can, and it only works for this one repo. If it were stolen, someone could change `main` without a PR, so it's worth knowing where to delete it: **Settings > Deploy keys**.
 
 ## 11. Safety and control
 
@@ -477,12 +475,12 @@ No secret lives in Git or in an image.
 | Bad code reaches `main` | PR required, checks required, and only you can click Merge |
 | A stranger's PR runs CI | You must approve the run, and it gets no secrets |
 | A stranger's PR uses your Claude limits | The review is skipped on fork PRs |
-| The bot changes too much | The deploy key is used only by `release.yml`, for the tag commit |
+| The bot changes too much | It can't push to `main`, and it only writes to `release/test` |
 | Claude's fix goes wrong | One attempt, your approval to run CI, and your Merge click |
 | A release breaks the app | The new pod must pass its checks, or the old one keeps serving, and rollback is a revert |
 | The API key leaks | It's outside Git and images, and the budget is prepaid |
 
-**Nothing merges automatically.** Auto-merge is off. The only commits that reach `main` without a PR are the bot's tag commits.
+**Nothing merges automatically.** Auto-merge is off. Every commit on `main` comes through a PR. `release/test` isn't protected, so anyone with write access could push to it, and today that's only you and the pipeline.
 
 Read any change under `.github/` carefully, because workflows are what can use your secrets. Keep using `pull_request`, not `pull_request_target`, which would give fork PRs access to secrets.
 
@@ -507,7 +505,7 @@ These problems are the most useful part of the day, and good material for an int
 | `401 Invalid bearer token` in CI | The token was damaged when copied from a wrapped terminal line | Strip whitespace with `tr` before `gh secret set` | Check that a secret works, not just that it exists |
 | OAuth `client_id` error | The sign-in URL was also broken by line wrapping | Use a wider terminal | Terminals wrap long values |
 | Merge could get stuck | A required check whose workflow doesn't run stays pending | Always-running gate job | Design around skipped jobs |
-| Bot couldn't push to `main` | `GITHUB_TOKEN` can't go on the exception list | Deploy key | Test assumptions early |
+| Bot couldn't push to `main` | `GITHUB_TOKEN` can't go on the exception list | A deploy key at first, then a separate `release/test` branch | Test assumptions early, and removing a need beats working around it |
 | Secret held `kubectl...` | The clipboard still held the command | `op read` from 1Password | Verify a secret's start, not all of it |
 | First auto-fix did nothing | No allowed tool could delete a file | Add `git rm` | Allowed tools limit what Claude can do |
 | Review stopped on a fix commit | The commit came from `github-actions`, which wasn't an allowed bot (`Workflow initiated by non-human actor`) | Add it to `allowed_bots` | Check which identity a commit really uses |
@@ -716,26 +714,27 @@ gh api -X POST repos/<your-user>/chatbot/rulesets --input ruleset.json
 ### Stage 4: Release
 
 1. Create a branch, and add `backend/Dockerfile`.
-2. Add the chart in `deploy/chart/` and the tags in `deploy/envs/test/values.yaml`.
+2. Add the chart in `deploy/chart/`.
 3. Add `.github/workflows/release.yml`, and add `deploy/` to the review filter in `ci.yml`.
-4. Create the deploy key and add it to the ruleset's exception list. Replace `<ruleset-id>` with the ID from `gh api repos/<your-user>/chatbot/rulesets`:
+4. Create the `release/test` branch from `main`, and add the first tags to `deploy/envs/test/values.yaml` on that branch only:
 
 ```bash
-ssh-keygen -t ed25519 -N "" -C release-bot -f ./release-key
-gh api -X POST repos/<your-user>/chatbot/keys -f title=release-bot -f key="$(cat release-key.pub)" -F read_only=false
-gh secret set RELEASE_DEPLOY_KEY -R <your-user>/chatbot < release-key
-rm release-key release-key.pub
-echo '{"bypass_actors":[{"actor_type":"DeployKey","bypass_mode":"always"}]}' | gh api -X PUT repos/<your-user>/chatbot/rulesets/<ruleset-id> --input -
+git switch -c release/test
+mkdir -p deploy/envs/test
+printf 'backend:\n  image:\n    tag: "0.1.0-initial"\n' > deploy/envs/test/values.yaml
+git add -A && git commit -m "Add test environment values"
+git push -u origin release/test
+git switch -
 ```
 
 5. Check it locally, then open a PR and merge it:
 
 ```bash
-helm lint deploy/chart -f deploy/envs/test/values.yaml
+helm lint deploy/chart --set backend.image.tag=test
 docker build -t chatbot-backend:local backend
 ```
 
-**You've arrived when** the Release run passes, a `Deploy chatbot...` commit appears on `main`, and this works with no login:
+**You've arrived when** the Release run passes, a `Deploy chatbot...` commit appears on `release/test`, and this works with no login:
 
 ```bash
 docker logout ghcr.io
@@ -761,7 +760,7 @@ kubectl -n argocd get application chatbot
 ```
 
 5. Test an update: merge a small `backend/` change, and wait for the new pod.
-6. Test a rollback: revert the tag commit through a PR. The image you return to must support the current chart.
+6. Test a rollback: on `release/test`, run `git revert --no-edit HEAD`, then push.
 
 **You've arrived when** Argo CD shows `Synced` and `Healthy`, and a merge updates the pod with no manual step.
 
@@ -808,10 +807,6 @@ gh label create claude-fix -R <your-user>/chatbot --color 0f5cc0
 **You've arrived when** Claude's fix commit appears on the PR, and the second bug produces the "fix them by hand" comment.
 
 ## 16. Known gaps
-
-**Most important**
-
-- **Chart and image arrive separately.** Argo CD watches `main`, so a chart change deploys before its image exists. The fix is to have Argo CD watch a `release/test` branch that only the release pipeline updates.
 
 **Before going public**
 

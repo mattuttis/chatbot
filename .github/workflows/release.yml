@@ -6,8 +6,9 @@ on:
     paths:
       - 'backend/**'
       - 'frontend/**'
+      - 'deploy/chart/**'
 
-# Runs one at a time, so two merges can't race on the tag commit.
+# Runs one at a time, so two merges can't race on the release branch.
 concurrency: release
 
 permissions:
@@ -20,10 +21,7 @@ jobs:
     env:
       IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}
     steps:
-      # GITHUB_TOKEN can't go on the branch rule's exception list, so the tag commit uses a deploy key.
       - uses: actions/checkout@v7
-        with:
-          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
       - uses: dorny/paths-filter@v4
         id: changes
@@ -79,20 +77,25 @@ jobs:
           push: true
           tags: ${{ env.IMAGE_PREFIX }}/chatbot-frontend:${{ steps.frontend.outputs.tag }}
 
-      - name: Commit the new tags
+      # Argo CD watches release/test, so the chart and tags must land there in one commit.
+      - name: Update the release branch
         env:
           BACKEND_TAG: ${{ steps.backend.outputs.tag }}
           FRONTEND_TAG: ${{ steps.frontend.outputs.tag }}
         run: |
+          git fetch --depth=1 origin release/test:release/test
+          git switch release/test
+          git rm -r -q deploy/chart
+          git checkout "$GITHUB_SHA" -- deploy/chart
           FILE=deploy/envs/test/values.yaml
           [ -z "$BACKEND_TAG" ] || yq -i '.backend.image.tag = strenv(BACKEND_TAG)' "$FILE"
           [ -z "$FRONTEND_TAG" ] || yq -i '.frontend.image.tag = strenv(FRONTEND_TAG)' "$FILE"
-          if git diff --quiet; then
-            echo "Tags unchanged, nothing to commit"
+          git add -A deploy
+          if git diff --cached --quiet; then
+            echo "Nothing to release"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "Deploy chatbot ${BACKEND_TAG:+backend $BACKEND_TAG }${FRONTEND_TAG:+frontend $FRONTEND_TAG }to test"
-          git pull --rebase
-          git push
+          git commit -m "Deploy chatbot ${GITHUB_SHA::7} to test"
+          git push origin release/test
