@@ -1,0 +1,162 @@
+<title>Chatbot CI Pipeline</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;600;700&display=swap">
+<style>
+  /* Layout: one wide figure reading left to right, with the failure path looping back underneath. */
+  :root {
+    --bg: #f2f5f8;
+    --fg: #15232e;
+    --muted: #4f6272;
+    --zone: #e3eaf0;
+    --box: #ffffff;
+    --line: #9fb0be;
+    --pass: #1a7a4c;
+    --fail: #c0392b;
+    --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #10181f;
+      --fg: #e6edf3;
+      --muted: #9db0bf;
+      --zone: #18232c;
+      --box: #223039;
+      --line: #4d6272;
+      --pass: #5fce9a;
+      --fail: #ff8a7a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10181f;
+    --fg: #e6edf3;
+    --muted: #9db0bf;
+    --zone: #18232c;
+    --box: #223039;
+    --line: #4d6272;
+    --pass: #5fce9a;
+    --fail: #ff8a7a;
+    color-scheme: dark;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.55;
+  }
+  main {
+    max-width: 1040px;
+    margin: 0 auto;
+    display: grid;
+    gap: 24px;
+    padding-block: 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+  header { display: grid; gap: 8px; }
+  h1 { margin: 0; font-size: 2rem; line-height: 1.2; font-weight: 700; text-wrap: balance; }
+  header p { margin: 0; max-width: 65ch; color: var(--muted); }
+  figure { margin: 0; display: grid; gap: 12px; min-width: 0; }
+  .scroll { overflow-x: auto; min-width: 0; }
+  svg { display: block; width: 100%; min-width: 760px; height: auto; color: var(--fg); }
+  figcaption { max-width: 70ch; color: var(--muted); }
+
+  .zone { fill: var(--zone); }
+  .box { fill: var(--box); stroke: var(--line); stroke-width: 1; }
+  .box.pass { stroke: var(--pass); stroke-width: 2; }
+  .box.fail { stroke: var(--fail); stroke-width: 2; }
+  .box.later { stroke-dasharray: 6 5; }
+  .edge { fill: none; stroke: currentColor; stroke-width: 1.5; }
+  .edge.pass { stroke: var(--pass); stroke-width: 2; }
+  .edge.fail { stroke: var(--fail); stroke-width: 2; }
+  .zone-label { fill: var(--muted); font: 500 11px var(--font-mono); letter-spacing: 0.08em; }
+  .title { fill: var(--fg); font: 600 13px var(--font-body); text-anchor: middle; }
+  .sub { fill: var(--muted); font: 400 11px var(--font-mono); text-anchor: middle; }
+  .label { font: 500 12px var(--font-mono); text-anchor: middle; }
+  .label.pass { fill: var(--pass); }
+  .label.fail { fill: var(--fail); }
+</style>
+
+<main>
+  <header>
+    <h1>Chatbot CI Pipeline</h1>
+    <p>What happens to a pull request before it can reach <code>main</code>. This is the plan for step 4, and it isn't built yet.</p>
+  </header>
+
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 960 396" role="img" aria-label="A pull request starts the changes job, which decides whether the backend build, frontend build and Claude review run. The all-checks-passed job then either unlocks your review and merge, or blocks the merge until a new commit runs the pipeline again.">
+        <defs>
+          <marker id="ci-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto">
+            <path d="M0 0 L10 5 L0 10 Z" fill="currentColor"/>
+          </marker>
+          <marker id="ci-arrow-pass" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto">
+            <path d="M0 0 L10 5 L0 10 Z" fill="var(--pass)"/>
+          </marker>
+          <marker id="ci-arrow-fail" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto">
+            <path d="M0 0 L10 5 L0 10 Z" fill="var(--fail)"/>
+          </marker>
+        </defs>
+
+        <rect class="zone" x="150" y="16" width="556" height="308" rx="10"/>
+        <text class="zone-label" x="170" y="38">CI.YML, RUNS ON EVERY PULL REQUEST</text>
+
+        <rect class="box" x="16" y="148" width="110" height="64" rx="6"/>
+        <text class="title" x="71" y="176">Pull request</text>
+        <text class="sub" x="71" y="192">to main</text>
+
+        <rect class="box" x="170" y="150" width="100" height="60" rx="6"/>
+        <text class="title" x="220" y="176">changes</text>
+        <text class="sub" x="220" y="192">which folders?</text>
+
+        <rect class="box" x="316" y="52" width="200" height="72" rx="6"/>
+        <text class="title" x="416" y="78">backend-build</text>
+        <text class="sub" x="416" y="94">mvn verify</text>
+        <text class="sub" x="416" y="110">if backend/ changed</text>
+
+        <rect class="box later" x="316" y="144" width="200" height="72" rx="6"/>
+        <text class="title" x="416" y="170">frontend-build</text>
+        <text class="sub" x="416" y="186">ng test, ng build</text>
+        <text class="sub" x="416" y="202">if frontend/ changed</text>
+
+        <rect class="box" x="316" y="236" width="200" height="72" rx="6"/>
+        <text class="title" x="416" y="262">claude-review</text>
+        <text class="sub" x="416" y="278">comments, fails on critical</text>
+        <text class="sub" x="416" y="294">if code or .github/ changed</text>
+
+        <rect class="box" x="555" y="145" width="135" height="70" rx="6"/>
+        <text class="title" x="622" y="175">all-checks-passed</text>
+        <text class="sub" x="622" y="191">required by main</text>
+
+        <rect class="box pass" x="770" y="58" width="174" height="60" rx="6"/>
+        <text class="title" x="857" y="84">You review and merge</text>
+        <text class="sub" x="857" y="100">click Merge yourself</text>
+
+        <rect class="box fail" x="770" y="242" width="174" height="60" rx="6"/>
+        <text class="title" x="857" y="268">Merge blocked</text>
+        <text class="sub" x="857" y="284">fix the problem</text>
+
+        <path class="edge" d="M126 180 H170" marker-end="url(#ci-arrow)"/>
+        <path class="edge" d="M270 180 H293 V88 H316" marker-end="url(#ci-arrow)"/>
+        <path class="edge" d="M270 180 H316" marker-end="url(#ci-arrow)"/>
+        <path class="edge" d="M270 180 H293 V272 H316" marker-end="url(#ci-arrow)"/>
+        <path class="edge" d="M516 88 H535 V165 H555" marker-end="url(#ci-arrow)"/>
+        <path class="edge" d="M516 180 H555" marker-end="url(#ci-arrow)"/>
+        <path class="edge" d="M516 272 H535 V195 H555" marker-end="url(#ci-arrow)"/>
+
+        <path class="edge pass" d="M690 165 H716 V88 H770" marker-end="url(#ci-arrow-pass)"/>
+        <text class="label pass" x="743" y="81">passes</text>
+        <path class="edge fail" d="M690 195 H716 V272 H770" marker-end="url(#ci-arrow-fail)"/>
+        <text class="label fail" x="743" y="265">fails</text>
+
+        <path class="edge fail" d="M857 302 V360 H71 V212" marker-end="url(#ci-arrow-fail)"/>
+        <text class="label fail" x="425" y="353">push a new commit and CI runs again</text>
+      </svg>
+    </div>
+    <figcaption>The three jobs run in parallel, and only for what changed. <code>all-checks-passed</code> accepts a skipped job, so a PR that only changes docs can still merge. It's the only required check, and your click on Merge is the human approval. The dashed job arrives in step 7.</figcaption>
+  </figure>
+</main>
