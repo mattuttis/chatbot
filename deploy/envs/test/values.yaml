@@ -3,4 +3,4 @@ backend:
     tag: "0.1.0-d40564c"
 frontend:
   image:
-    tag: "0.1.0-2e78a63"
+    tag: "0.1.0-51b06ca"
