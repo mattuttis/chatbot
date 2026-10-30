@@ -155,6 +155,7 @@ The two topics connect: the Spring AI chatbot is the service that the pipeline r
 
 ### Reminders
 
+- **IMPORTANT, fix later: chart and image must arrive together.** Argo CD watches `main`, so a chart change deploys right after the merge, while its image arrives minutes later. A chart that depends on a new image then fails until that image lands. Splitting the change into two PRs only works if a person merges them in the right order. The fix: have Argo CD watch a separate branch such as `release/test`, which only the release pipeline updates after pushing the image, so the chart and tag arrive in one commit. This pipeline would also need to run on `deploy/` changes.
 - **Step 5:** The first release run is the real test. Check that the new image is public on GHCR, since Minikube has no pull secret.
 - **Diagram:** "push image" and "commit tag" run in sequence, although the fork in `architecture.png` makes them look parallel.
 - **Public repo:** Turn on "Require approval for all external contributors" under Settings > Actions > General, and read any change to `.github/` carefully before merging.
