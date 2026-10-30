@@ -53,6 +53,13 @@ class ChatControllerTest {
         post("{\"message\":\"  \"}").expectStatus().isBadRequest();
     }
 
+    @Test
+    void rejectsMessageOverSizeLimit() {
+        String message = "a".repeat(4001);
+
+        post("{\"message\":\"" + message + "\"}").expectStatus().isBadRequest();
+    }
+
     private WebTestClient.ResponseSpec post(String body) {
         return webTestClient.post().uri("/api/chat")
                 .contentType(MediaType.APPLICATION_JSON)

@@ -90,7 +90,8 @@ Check the input names against the action's README for your version.
 ## 7. Gating and deployment
 
 - **Branch protection on main/master:** Require a PR with 0 approvals, because GitHub doesn't let a solo developer approve their own PR. Your review is the human gate: you read the PR and click Merge yourself, so auto-merge stays off. Require a single final "all checks passed" job as the status check. That job covers the Maven build and Claude review (see section 10 for why).
-- **Decision: the Claude review fails the job on critical issues,** so it blocks the merge. The action only comments by default, so the prompt has to ask for this. Test it with a PR containing a deliberate critical bug. If the job still passes, have Claude output a verdict and add a workflow step that fails on it.
+- **Decision: the Claude review fails the job on critical issues,** so it blocks the merge. The action only comments by default, so `ci.yml` has Claude return a `critical_issues` verdict, and a workflow step fails on it. Tested with a PR containing a deliberate critical bug.
+- **Decision: separate builds, one review.** `backend-build` and `frontend-build` each run only when their own folder changes. One `claude-review` job runs when `backend/`, `frontend/` or `.github/` changes, because a single review sees a change across both. `all-checks-passed` accepts skipped jobs.
 - **Deploy on merge**, so only reviewed and checked code is deployed.
 
 ## 8. GitOps with Argo CD
@@ -155,6 +156,10 @@ The two topics connect: the Spring AI chatbot is the service that the pipeline r
 ### Reminders
 
 - **Step 3:** Get a pay-as-you-go API key from console.anthropic.com first. The backend calls Claude locally, and a Claude Pro subscription doesn't include one.
+- **Step 5:** Add `deploy/` to the review filter in `ci.yml`, so hand-made Helm chart changes get reviewed.
 - **Step 5:** Push the image before committing the tag. They run in sequence, although the diagram's fork makes them look parallel.
 - **Step 5:** Test whether the default `GITHUB_TOKEN` can bypass branch protection. If it can't, use a GitHub App token and make the release workflow ignore `deploy/` to avoid a loop.
+- **Step 7:** Add the `frontend-build` job to `ci.yml`, and to the jobs `all-checks-passed` waits for.
+- **Before going public:** Add a login or rate limit to `/api/chat`. Anyone who can reach it can run up the API bill.
+- **Claude review token:** It lasts one year, so renew `CLAUDE_CODE_OAUTH_TOKEN` before it expires.
 - **Doc cleanup:** Use "main" everywhere instead of "master" (section 8), and "API key" instead of "API key or token" (section 10).
