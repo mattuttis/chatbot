@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'backend/**'
+      - 'frontend/**'
 
 # Runs one at a time, so two merges can't race on the tag commit.
 concurrency: release
@@ -16,24 +17,22 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-24.04-arm
+    env:
+      IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}
     steps:
       # GITHUB_TOKEN can't go on the branch rule's exception list, so the tag commit uses a deploy key.
       - uses: actions/checkout@v7
         with:
           ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
-      - uses: actions/setup-java@v6
+      - uses: dorny/paths-filter@v4
+        id: changes
         with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-
-      - name: Work out the image tag
-        id: tag
-        working-directory: backend
-        run: |
-          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
-          echo "tag=${VERSION%-SNAPSHOT}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
 
       - uses: docker/login-action@v4
         with:
@@ -41,24 +40,59 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
+      - uses: actions/setup-java@v6
+        if: steps.changes.outputs.backend == 'true'
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Work out the backend tag
+        id: backend
+        if: steps.changes.outputs.backend == 'true'
+        working-directory: backend
+        run: |
+          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "tag=${VERSION%-SNAPSHOT}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
       - uses: docker/build-push-action@v7
+        if: steps.changes.outputs.backend == 'true'
         with:
           context: backend
           platforms: linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/chatbot-backend:${{ steps.tag.outputs.tag }}
+          tags: ${{ env.IMAGE_PREFIX }}/chatbot-backend:${{ steps.backend.outputs.tag }}
 
-      - name: Commit the new tag
-        env:
-          TAG: ${{ steps.tag.outputs.tag }}
+      - name: Work out the frontend tag
+        id: frontend
+        if: steps.changes.outputs.frontend == 'true'
+        working-directory: frontend
         run: |
-          yq -i '.backend.image.tag = strenv(TAG)' deploy/envs/test/values.yaml
+          VERSION=$(jq -r .version package.json)
+          echo "tag=${VERSION}-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v7
+        if: steps.changes.outputs.frontend == 'true'
+        with:
+          context: frontend
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/chatbot-frontend:${{ steps.frontend.outputs.tag }}
+
+      - name: Commit the new tags
+        env:
+          BACKEND_TAG: ${{ steps.backend.outputs.tag }}
+          FRONTEND_TAG: ${{ steps.frontend.outputs.tag }}
+        run: |
+          FILE=deploy/envs/test/values.yaml
+          [ -z "$BACKEND_TAG" ] || yq -i '.backend.image.tag = strenv(BACKEND_TAG)' "$FILE"
+          [ -z "$FRONTEND_TAG" ] || yq -i '.frontend.image.tag = strenv(FRONTEND_TAG)' "$FILE"
           if git diff --quiet; then
-            echo "Tag unchanged, nothing to commit"
+            echo "Tags unchanged, nothing to commit"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "Deploy chatbot-backend $TAG to test"
+          git commit -am "Deploy chatbot ${BACKEND_TAG:+backend $BACKEND_TAG }${FRONTEND_TAG:+frontend $FRONTEND_TAG }to test"
           git pull --rebase
           git push

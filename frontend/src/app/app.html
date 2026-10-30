@@ -1,0 +1,26 @@
+<main class="chat">
+  <h1>Chatbot</h1>
+
+  <section class="messages" aria-live="polite">
+    @for (message of messages(); track $index) {
+      <p class="message" [class.user]="message.role === 'user'" [class.failed]="message.failed">
+        {{ message.text || '…' }}
+      </p>
+    } @empty {
+      <p class="hint">Ask anything to start the chat.</p>
+    }
+  </section>
+
+  <form (submit)="send($event)">
+    <input
+      id="message"
+      aria-label="Your message"
+      autocomplete="off"
+      maxlength="4000"
+      placeholder="Type a message"
+      [value]="draft()"
+      (input)="draft.set($any($event.target).value)"
+    />
+    <button type="submit" [disabled]="sending() || !draft().trim()">Send</button>
+  </form>
+</main>
