@@ -90,7 +90,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ github.token }}
           # Lets the review run again after a claude-fix commit.
-          allowed_bots: claude
+          allowed_bots: claude,github-actions
           prompt: |
             Review pull request #${{ github.event.pull_request.number }} in ${{ github.repository }}.
             The repo holds a Spring Boot backend, an Angular frontend and deployment config.
