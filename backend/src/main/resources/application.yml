@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: chatbot-backend
+  ai:
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY:}
+      chat:
+        options:
+          model: claude-opus-5-5
+          max-tokens: 16000
