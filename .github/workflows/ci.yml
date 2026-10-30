@@ -25,6 +25,7 @@ jobs:
             review:
               - 'backend/**'
               - 'frontend/**'
+              - 'deploy/**'
               - '.github/**'
 
   backend-build:
