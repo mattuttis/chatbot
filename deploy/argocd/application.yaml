@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/mattuttis/chatbot.git
-    targetRevision: main
+    targetRevision: release/test
     path: deploy/chart
     helm:
       valueFiles:

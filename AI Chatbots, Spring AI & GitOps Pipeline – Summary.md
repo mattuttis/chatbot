@@ -102,12 +102,12 @@ Check the input names against the action's README for your version.
 ### The flow
 
 1. **Merge to master:** The pipeline builds the image and pushes it with a new tag.
-2. **Update the tag:** The pipeline commits the new tag to the `deploy/` folder in the monorepo (e.g. `deploy/envs/test/values.yaml` → `image.tag`). See section 10. A separate config repo is the alternative.
-   - **Decision: a deploy key.** The default `GITHUB_TOKEN` can't go on the branch rule's exception list, so the pipeline commits with a write-access deploy key for this repo, stored as the `RELEASE_DEPLOY_KEY` secret.
+2. **Update the release branch:** The pipeline copies the chart and commits the new tag to the `release/test` branch (e.g. `deploy/envs/test/values.yaml` → `image.tag`). See section 10. A separate config repo is the alternative.
+   - **Decision: a release branch.** Argo CD watches `release/test`, so the chart and tag arrive in one commit after the image exists. The branch isn't locked, so `GITHUB_TOKEN` can push to it, and `main` has no exceptions.
    - Update the tag with `yq` (or `kustomize edit set image`).
    - Commit and push, e.g. "Deploy myapp 1.4.0-3f2a9c1 to test".
    - Alternative: **Argo CD Image Updater** watches the registry and makes this commit for you.
-3. **Argo CD** detects the change and deploys it. Rolling back means reverting a commit.
+3. **Argo CD** detects the change and deploys it. Rolling back means reverting a commit on `release/test`.
 
 ### Image tagging
 
@@ -139,7 +139,7 @@ The two topics connect: the Spring AI chatbot is the service that the pipeline r
 - **Deployment:** Build Angular into static files, serve them with nginx in a Docker image, and push the image to GHCR. Deploy it to Minikube as a second service in the Helm chart.
 - **Routing:** Use an Ingress in Minikube (`minikube addons enable ingress`) so `/` goes to the frontend and `/api` goes to the backend. Same origin means no CORS issues.
 - **Pipeline:** Same pattern as the backend. Run Claude PR reviews and an Angular build/test job (`npm ci`, `ng test`, `ng build`). On merge, push the image and update its tag in `deploy/`.
-- **Repo layout (decided):** One monorepo with `backend/`, `frontend/` and `deploy/` (Helm chart + image tags) folders. Each build runs only when its folder changes, and CI ignores `deploy/`. Don't use workflow-level `paths:` filters for this: a required check whose workflow never runs stays pending, so the PR can't merge. Instead, the workflow always runs, a `changes` job (e.g. `dorny/paths-filter`) decides which build jobs to run, and a final "all checks passed" job uses `needs:` with `if: always()` and passes when the others succeeded or were skipped. The release workflow only runs when `backend/` changes, so its tag commit to `deploy/` can't start a loop. Because main is protected, the deploy key is on the branch rule's exception list, so the pipeline can push tag changes straight to main. It doesn't rerun the tests, because CI already ran them on the PR.
+- **Repo layout (decided):** One monorepo with `backend/`, `frontend/` and `deploy/` (Helm chart + image tags) folders. Each build runs only when its folder changes, and CI ignores `deploy/`. Don't use workflow-level `paths:` filters for this: a required check whose workflow never runs stays pending, so the PR can't merge. Instead, the workflow always runs, a `changes` job (e.g. `dorny/paths-filter`) decides which build jobs to run, and a final "all checks passed" job uses `needs:` with `if: always()` and passes when the others succeeded or were skipped. The release workflow runs on `main` and commits to `release/test`, so it can't start a loop. It doesn't rerun the tests, because CI already ran them on the PR.
 
 ## 11. Implementation plan
 
@@ -147,15 +147,14 @@ The two topics connect: the Spring AI chatbot is the service that the pipeline r
 2. **Monorepo:** Create the GitHub repo with `backend/`, `frontend/` and `deploy/` (use `.gitkeep` placeholders, since Git doesn't track empty folders), plus a `.gitignore` and README. Done when the repo is on GitHub with that layout.
 3. **Chatbot backend:** Build the Spring Boot service in `backend/` with streaming replies from Claude. Done when a local request gets a streamed reply.
 4. **CI pipeline (on PR):** Add the Claude review workflow (`claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN` secret), the Maven build, the `changes` and "all checks passed" jobs, and branch protection (PR required, 0 approvals, the "all checks passed" job as the required check). Done when a PR can't merge until its checks pass, and a PR with a deliberate critical bug fails the Claude review.
-5. **Release pipeline (on merge):** Add the Dockerfile, the Helm chart in `deploy/`, the arm64 build-and-push-to-GHCR job, the tag commit, and the deploy key with its branch rule exception. Done when a merge produces a new image and a new tag commit.
-6. **Cluster deployment:** Create the cluster with `minikube start -p chatbot-test`, which is the test environment. Install Argo CD and point it at the `deploy/` folder in the monorepo. Create the Claude API key as the Secret `chatbot-claude`, with the key `api-key`. Done when a merge updates the running pod and reverting the tag commit rolls it back.
+5. **Release pipeline (on merge):** Add the Dockerfile, the Helm chart in `deploy/`, the arm64 build-and-push-to-GHCR job, and the commit to the `release/test` branch. Done when a merge produces a new image and a new commit on that branch.
+6. **Cluster deployment:** Create the cluster with `minikube start -p chatbot-test`, which is the test environment. Install Argo CD and point it at `deploy/chart` on the `release/test` branch. Create the Claude API key as the Secret `chatbot-claude`, with the key `api-key`. Done when a merge updates the running pod and reverting the tag commit rolls it back.
 7. **Angular frontend:** Build the chat UI and its build job, then deploy it the same way (nginx image, Ingress). Done when you can chat in the browser through Minikube.
 8. **Claude auto-fix (one attempt per PR for now, maybe up to 3 later):** Add a job that commits a fix to the PR branch when the review finds critical issues. Use the Claude GitHub App's token, because commits pushed with `GITHUB_TOKEN` don't re-trigger the checks. Allow the App's bot to trigger the Claude action, and run the job only on PRs from branches in this repo (not forks). A `claude-fix` label limits it to one attempt, and if critical issues remain, it leaves a comment asking you to step in. You still review and click Merge. Done when a PR with a fixable issue gets fixed and passes, and a PR that can't be fixed stops after one attempt.
 9. Optional: add Argo CD Image Updater, or try the same project in Python/FastAPI.
 
 ### Reminders
 
-- **IMPORTANT, fix later: chart and image must arrive together.** Argo CD watches `main`, so a chart change deploys right after the merge, while its image arrives minutes later. A chart that depends on a new image then fails until that image lands. Splitting the change into two PRs only works if a person merges them in the right order. The fix: have Argo CD watch a separate branch such as `release/test`, which only the release pipeline updates after pushing the image, so the chart and tag arrive in one commit. This pipeline would also need to run on `deploy/` changes.
 - **Step 5:** The first release run is the real test. Check that the new image is public on GHCR, since Minikube has no pull secret.
 - **Diagram:** "push image" and "commit tag" run in sequence, although the fork in `architecture.png` makes them look parallel.
 - **Public repo:** Turn on "Require approval for all external contributors" under Settings > Actions > General, and read any change to `.github/` carefully before merging.
