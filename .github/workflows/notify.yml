@@ -1,0 +1,36 @@
+name: Notify
+
+on:
+  pull_request:
+    types: [opened, closed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  slack:
+    # PRs from forks can't read repo secrets.
+    if: github.event.pull_request.head.repo.full_name == github.repository && (github.event.action == 'opened' || github.event.pull_request.merged)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          ACTION: ${{ github.event.action }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          if [ "$ACTION" = "opened" ]; then
+            ICON="🆕"
+            VERB="opened"
+          else
+            ICON="🚀"
+            VERB="merged"
+          fi
+
+          jq -n --arg icon "$ICON" --arg verb "$VERB" --arg number "$NUMBER" --arg url "$PR_URL" --arg title "$TITLE" \
+            '($title | gsub("&"; "&amp;") | gsub("<"; "&lt;") | gsub(">"; "&gt;")) as $safe
+            | {text: "\($icon) <\($url)|PR #\($number)> \($verb): \($safe)"}' \
+            | curl -fsS -H 'Content-Type: application/json' --data @- "$SLACK_WEBHOOK_URL"
