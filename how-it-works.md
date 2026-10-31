@@ -309,11 +309,13 @@ flowchart LR
 | ✅ Claude accepted | `notify-review` in `ci.yml` | The review passes |
 | ❌ Claude found critical issues | `notify-review` | The review finds a critical issue |
 | ⚠️ Claude review failed | `notify-review` | The review stops without a verdict |
+| 🔧 Claude pushed a fix, click Approve and run | `claude-fix` | The fix is pushed and CI waits for your approval |
+| 🛑 Please fix it by hand | `claude-fix`, `claude-fix-stopped` | Claude couldn't fix it, or already tried |
 | 🚀 PR merged | `notify.yml` | A PR is really merged, not just closed |
 
 The review runs on every push, so a PR can post several verdicts. Docs-only PRs skip the review, so they only post opened and merged. PRs from forks post nothing, because they can't read the webhook secret.
 
-Neither job is part of `all-checks-passed`, so a Slack problem can't block a merge. It only shows as a failed job on the PR.
+None of these jobs is part of `all-checks-passed`, so a Slack problem can't block a merge. It only shows as a failed job on the PR.
 
 ## 7. The release pipeline
 
@@ -483,7 +485,7 @@ No secret lives in Git or in an image.
 | `CLAUDE_CODE_OAUTH_TOKEN` | Runs Claude in CI on your Pro plan | GitHub Actions secret | `claude-review`, `claude-fix` | 1 year |
 | `GITHUB_TOKEN` | Temporary token for each run | Created by GitHub | Most jobs | One run |
 | Claude GitHub App | Lets fix commits start CI | Installed on this repo | `claude-fix` | Until you remove it |
-| `SLACK_WEBHOOK_URL` | Lets anyone holding it post to `#chatbot-dev` | GitHub Actions secret | `notify.yml`, `notify-review` | Until you remove the webhook |
+| `SLACK_WEBHOOK_URL` | Lets anyone holding it post to `#chatbot-dev` | GitHub Actions secret | `notify.yml`, `notify-review`, `claude-fix`, `claude-fix-stopped` | Until you remove the webhook |
 
 ## 11. Safety and control
 
