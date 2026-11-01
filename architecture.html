@@ -82,7 +82,7 @@
 <main>
   <header>
     <h1>Spring AI Chatbot Architecture</h1>
-    <p>The planned setup from the project summary: how a chat message travels at runtime, and how a code change reaches the local cluster.</p>
+    <p>How a chat message travels at runtime, and how a change requested in Slack reaches a PR preview and the local cluster.</p>
   </header>
 
   <section>
@@ -148,7 +148,7 @@
     <h2>A code change reaching the cluster</h2>
     <figure>
       <div class="scroll">
-        <svg viewBox="0 0 960 426" role="img" aria-label="A pull request runs build and Claude review checks in parallel, then merges to main after your review. A release job pushes the image to ghcr.io and commits the new tag to deploy/. Argo CD inside Minikube watches Git and applies the chart, and the pods pull the image, so every connection starts from inside the cluster.">
+        <svg viewBox="0 0 960 552" role="img" aria-label="A request to @Claude in Slack starts a Claude cloud session, which pushes a branch that opens a pull request. The PR runs build and Claude review checks. A passed review starts a preview job, and merging starts a release job. Both publish images and Git state, which Argo CD inside Minikube reads to deploy the previews and the test app, so every connection starts from inside the cluster.">
           <defs>
             <marker id="cd-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto">
               <path d="M0 0 L10 5 L0 10 Z" fill="currentColor"/>
@@ -158,79 +158,101 @@
             </marker>
           </defs>
 
-          <rect class="zone" x="16" y="16" width="620" height="394" rx="10"/>
-          <rect class="zone" x="716" y="186" width="228" height="224" rx="10"/>
-          <text class="zone-label" x="32" y="38">GITHUB</text>
-          <text class="zone-label" x="736" y="208">MINIKUBE ON YOUR LAPTOP</text>
+          <rect class="zone" x="16" y="16" width="164" height="100" rx="10"/>
+          <rect class="zone" x="244" y="16" width="200" height="100" rx="10"/>
+          <rect class="zone" x="16" y="134" width="620" height="402" rx="10"/>
+          <rect class="zone" x="716" y="272" width="228" height="264" rx="10"/>
+          <text class="zone-label" x="32" y="36">SLACK</text>
+          <text class="zone-label" x="260" y="36">ANTHROPIC CLOUD</text>
+          <text class="zone-label" x="560" y="156">GITHUB</text>
+          <text class="zone-label" x="736" y="294">MINIKUBE ON YOUR LAPTOP</text>
 
-          <path class="pull" d="M740 70 H700" marker-end="url(#cd-arrow-pull)"/>
-          <text class="label left pull-label" x="752" y="66">started from</text>
-          <text class="label left pull-label" x="752" y="82">inside the cluster</text>
-          <path class="edge" d="M740 116 H700" marker-end="url(#cd-arrow)"/>
-          <text class="label left" x="752" y="120">pipeline step</text>
+          <path class="pull" d="M740 60 H700" marker-end="url(#cd-arrow-pull)"/>
+          <text class="label left pull-label" x="752" y="56">started from</text>
+          <text class="label left pull-label" x="752" y="72">inside the cluster</text>
+          <path class="edge" d="M740 106 H700" marker-end="url(#cd-arrow)"/>
+          <text class="label left" x="752" y="110">pipeline step</text>
 
-          <rect class="box" x="32" y="80" width="96" height="60" rx="6"/>
-          <text class="title" x="80" y="115">Pull request</text>
+          <rect class="box" x="32" y="46" width="132" height="56" rx="6"/>
+          <text class="title" x="98" y="70">@Claude request</text>
+          <text class="sub" x="98" y="86">private channel</text>
 
-          <rect class="box" x="166" y="56" width="130" height="50" rx="6"/>
-          <text class="title" x="231" y="77">Build and test</text>
-          <text class="sub" x="231" y="93">Maven, Angular</text>
+          <rect class="box" x="260" y="46" width="168" height="56" rx="6"/>
+          <text class="title" x="344" y="70">Claude session</text>
+          <text class="sub" x="344" y="86">writes the change</text>
 
-          <rect class="box" x="166" y="118" width="130" height="50" rx="6"/>
-          <text class="title" x="231" y="139">Claude review</text>
-          <text class="sub" x="231" y="155">fails on critical</text>
-          <text class="note" x="231" y="185">in parallel</text>
+          <path class="edge" d="M164 74 H260" marker-end="url(#cd-arrow)"/>
+          <path class="edge" d="M344 102 V168 H80 V198" marker-end="url(#cd-arrow)"/>
+          <text class="label" x="212" y="160">branch opens a PR</text>
 
-          <rect class="box" x="336" y="80" width="136" height="60" rx="6"/>
-          <text class="title" x="404" y="106">All checks passed</text>
-          <text class="sub" x="404" y="122">then your review</text>
+          <rect class="box" x="32" y="198" width="96" height="60" rx="6"/>
+          <text class="title" x="80" y="233">Pull request</text>
 
-          <rect class="box" x="512" y="80" width="108" height="60" rx="6"/>
-          <text class="title" x="566" y="115">Merge to main</text>
+          <rect class="box" x="166" y="174" width="130" height="50" rx="6"/>
+          <text class="title" x="231" y="195">Build and test</text>
+          <text class="sub" x="231" y="211">Maven, Angular</text>
 
-          <path class="edge" d="M128 110 H147 V81 H166" marker-end="url(#cd-arrow)"/>
-          <path class="edge" d="M128 110 H147 V143 H166" marker-end="url(#cd-arrow)"/>
-          <path class="edge" d="M296 81 H316 V110 H336" marker-end="url(#cd-arrow)"/>
-          <path class="edge" d="M296 143 H316 V110 H336" marker-end="url(#cd-arrow)"/>
-          <path class="edge" d="M472 110 H512" marker-end="url(#cd-arrow)"/>
-          <path class="edge" d="M566 140 V204 H205 V268" marker-end="url(#cd-arrow)"/>
+          <rect class="box" x="166" y="236" width="130" height="50" rx="6"/>
+          <text class="title" x="231" y="257">Claude review</text>
+          <text class="sub" x="231" y="273">fails on critical</text>
 
-          <rect class="box" x="120" y="268" width="170" height="80" rx="6"/>
-          <text class="title" x="205" y="298">Release job</text>
-          <text class="sub" x="205" y="314">runs on merge</text>
-          <text class="sub" x="205" y="330">tag 1.4.0-3f2a9c1</text>
+          <rect class="box" x="336" y="198" width="136" height="60" rx="6"/>
+          <text class="title" x="404" y="224">All checks passed</text>
+          <text class="sub" x="404" y="240">then your review</text>
 
-          <rect class="box" x="456" y="226" width="164" height="60" rx="6"/>
-          <text class="title" x="538" y="252">ghcr.io</text>
-          <text class="sub" x="538" y="268">public images</text>
+          <rect class="box" x="512" y="198" width="108" height="60" rx="6"/>
+          <text class="title" x="566" y="233">Merge to main</text>
 
-          <rect class="box" x="456" y="330" width="164" height="60" rx="6"/>
-          <text class="title" x="538" y="356">deploy/ on main</text>
-          <text class="sub" x="538" y="372">Helm chart, image tags</text>
+          <path class="edge" d="M128 228 H147 V199 H166" marker-end="url(#cd-arrow)"/>
+          <path class="edge" d="M128 228 H147 V261 H166" marker-end="url(#cd-arrow)"/>
+          <path class="edge" d="M296 199 H316 V228 H336" marker-end="url(#cd-arrow)"/>
+          <path class="edge" d="M296 261 H316 V228 H336" marker-end="url(#cd-arrow)"/>
+          <path class="edge" d="M472 228 H512" marker-end="url(#cd-arrow)"/>
+          <path class="edge" d="M231 286 V330" marker-end="url(#cd-arrow)"/>
+          <path class="edge" d="M566 258 V304 H96 V440 H120" marker-end="url(#cd-arrow)"/>
 
-          <path class="edge" d="M290 292 H372 V256 H456" marker-end="url(#cd-arrow)"/>
-          <text class="label" x="414" y="249">push image</text>
-          <path class="edge" d="M290 324 H372 V360 H456" marker-end="url(#cd-arrow)"/>
-          <text class="label" x="414" y="353">commit tag</text>
+          <rect class="box" x="146" y="330" width="170" height="80" rx="6"/>
+          <text class="title" x="231" y="360">Preview job</text>
+          <text class="sub" x="231" y="376">after a passed review</text>
+          <text class="sub" x="231" y="392">tag pr-24-3f2a9c1</text>
 
-          <rect class="box" x="736" y="226" width="188" height="60" rx="6"/>
-          <text class="title" x="830" y="252">Running pods</text>
-          <text class="sub" x="830" y="268">public arm64 images</text>
+          <rect class="box" x="120" y="430" width="170" height="80" rx="6"/>
+          <text class="title" x="205" y="460">Release job</text>
+          <text class="sub" x="205" y="476">runs on merge</text>
+          <text class="sub" x="205" y="492">tag 0.1.0-3f2a9c1</text>
 
-          <rect class="box" x="736" y="330" width="188" height="60" rx="6"/>
-          <text class="title" x="830" y="356">Argo CD</text>
-          <text class="sub" x="830" y="372">runs in the cluster</text>
+          <rect class="box" x="456" y="330" width="164" height="180" rx="6"/>
+          <text class="title" x="538" y="366">ghcr.io</text>
+          <text class="sub" x="538" y="382">public images</text>
+          <path class="edge" d="M472 420 H604" style="stroke:var(--line);stroke-width:1"/>
+          <text class="title" x="538" y="452">Git</text>
+          <text class="sub" x="538" y="468">release/test branch</text>
+          <text class="sub" x="538" y="484">PR label: preview</text>
 
-          <path class="pull" d="M736 256 H620" marker-end="url(#cd-arrow-pull)"/>
-          <text class="label pull-label" x="676" y="249">pull image</text>
-          <path class="pull" d="M736 360 H620" marker-end="url(#cd-arrow-pull)"/>
-          <text class="label pull-label" x="676" y="353">watch Git</text>
+          <path class="edge" d="M316 370 H456" marker-end="url(#cd-arrow)"/>
+          <text class="label" x="386" y="363">images, label</text>
+          <path class="edge" d="M290 470 H456" marker-end="url(#cd-arrow)"/>
+          <text class="label" x="373" y="463">images, chart, tags</text>
 
-          <path class="edge" d="M830 330 V286" marker-end="url(#cd-arrow)"/>
-          <text class="label left" x="838" y="312">apply chart</text>
+          <rect class="box" x="736" y="314" width="188" height="84" rx="6"/>
+          <text class="title" x="830" y="342">Running pods</text>
+          <text class="sub" x="830" y="360">chatbot: test app</text>
+          <text class="sub" x="830" y="376">chatbot-pr-24: preview</text>
+
+          <rect class="box" x="736" y="450" width="188" height="60" rx="6"/>
+          <text class="title" x="830" y="476">Argo CD</text>
+          <text class="sub" x="830" y="492">runs in the cluster</text>
+
+          <path class="pull" d="M736 366 H620" marker-end="url(#cd-arrow-pull)"/>
+          <text class="label pull-label" x="676" y="359">pull image</text>
+          <path class="pull" d="M736 480 H620" marker-end="url(#cd-arrow-pull)"/>
+          <text class="label pull-label" x="676" y="473">watch Git</text>
+
+          <path class="edge" d="M830 450 V398" marker-end="url(#cd-arrow)"/>
+          <text class="label left" x="838" y="428">apply chart</text>
         </svg>
       </div>
-      <figcaption>Blue arrows show who starts each connection, and both start inside Minikube, so GitHub never has to reach your laptop. To deploy, the release job changes one tag in <code>deploy/</code> and Argo CD does the rest. Rolling back means reverting that commit.</figcaption>
+      <figcaption>Blue arrows show who starts each connection, and both start inside Minikube, so GitHub never has to reach your laptop. A passed review gives the PR its own preview, and a merge updates <code>release/test</code>. Rolling back means reverting that commit.</figcaption>
     </figure>
   </section>
 </main>

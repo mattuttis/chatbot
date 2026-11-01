@@ -1,6 +1,6 @@
 # How the Chatbot Works
 
-This document explains the whole project: both apps, the cluster, the pipelines, and how Claude is built into them. It describes the state of `main` on 30 October 2026.
+This document explains the whole project: both apps, the cluster, the pipelines, and how Claude is built into them. It describes the state of `main` on 1 November 2026.
 
 ## Contents
 
@@ -38,11 +38,17 @@ flowchart LR
         FE["Frontend: nginx"]
         BE["Backend: Spring Boot"]
         ARGO["Argo CD"]
+        PREV["PR previews"]
     end
     subgraph GitHub
-        REPO["Repo: main"]
+        REPO["Repo: main and PRs"]
         ACTIONS["GitHub Actions"]
+        REL["release/test"]
         GHCR["GHCR images"]
+    end
+    subgraph Requests
+        SLACK["Slack: @Claude"]
+        SESSION["Claude cloud session"]
     end
     CLAUDE["Claude API"]
 
@@ -52,9 +58,13 @@ flowchart LR
     BE -->|"prompt"| CLAUDE
     REPO -->|"PR or merge"| ACTIONS
     ACTIONS -->|"push image"| GHCR
-    ACTIONS -->|"commit tag"| REPO
-    ARGO -->|"watches"| REPO
+    ACTIONS -->|"commit chart and tags"| REL
+    ARGO -->|"watches"| REL
+    ARGO -->|"watches labelled PRs"| REPO
+    ARGO -->|"deploys"| PREV
     BE -.->|"image pulled from"| GHCR
+    SLACK -->|"request"| SESSION
+    SESSION -->|"push branch"| REPO
 ```
 
 | Part | Technology | Version |
@@ -64,7 +74,7 @@ flowchart LR
 | Packaging | Docker, Helm | arm64 images |
 | Cluster | Minikube on a Mac (Docker driver) | Kubernetes 1.37 |
 | Deployment | Argo CD | v3.5.6 |
-| Pipelines | GitHub Actions | `ci.yml`, `release.yml` |
+| Pipelines | GitHub Actions | `ci.yml`, `release.yml`, `notify.yml`, `auto-pr.yml`, `preview-cleanup.yml` |
 | Image registry | GitHub Container Registry (GHCR) | Public images |
 | AI | Claude API and Claude Code action | See section 9 |
 
@@ -76,11 +86,16 @@ Everything lives in one public repo: [mattuttis/chatbot](https://github.com/matt
 chatbot/
 ├── .github/workflows/
 │   ├── ci.yml                 Runs on every PR
-│   └── release.yml            Runs on merges that change the apps
+│   ├── release.yml            Runs on merges that change the apps
+│   ├── notify.yml             Posts PR events to Slack
+│   ├── auto-pr.yml            Opens PRs for Claude's Slack branches
+│   └── preview-cleanup.yml    Deletes a closed PR's images
 ├── backend/                   Spring Boot service
 ├── frontend/                  Angular app
 ├── deploy/
 │   ├── argocd/application.yaml   Tells Argo CD what to deploy
+│   ├── argocd/previews.yaml      Creates a preview for each labelled PR
+│   ├── argocd/reflector.yaml     Copies the API key Secret to previews
 │   ├── chart/                    Helm chart for both apps
 │   └── envs/test/values.yaml     Image tags, only on the release/test branch
 ├── AI Chatbots, ... Summary.md   Decisions and the implementation plan
@@ -271,6 +286,8 @@ flowchart LR
     CH -->|"code, deploy/ or .github/ changed"| CR["claude-review"]
     CR -->|"critical, first time"| FIX["claude-fix"]
     CR -->|"critical, already tried"| STOP["claude-fix-stopped"]
+    CR -->|"passed, app or chart changed"| PV["preview"]
+    PV -->|"preview label"| ARGO["Argo CD deploys the PR"]
     BB --> ALL["all-checks-passed"]
     FB --> ALL
     CR --> ALL
@@ -409,9 +426,11 @@ flowchart TD
     subgraph CIFLOW["Delivery: the pipeline"]
         REV["claude-review"] -->|"OAuth token"| CC["Claude Code action"]
         FIX["claude-fix"] -->|"OAuth token and GitHub App"| CC
+        SLACK["@Claude in Slack"] -->|"your Claude account"| CS["Cloud session"]
     end
     API --> BILL1["Pay per use, prepaid credit"]
     CC --> BILL2["Claude Pro limits"]
+    CS --> BILL2
 ```
 
 | | Chatbot | CI review and auto-fix |
@@ -517,6 +536,9 @@ No secret lives in Git or in an image.
 | Claude's fix goes wrong | One attempt, your approval to run CI, and your Merge click |
 | A release breaks the app | The new pod must pass its checks, or the old one keeps serving, and rollback is a revert |
 | The API key leaks | It's outside Git and images, and the budget is prepaid |
+| A stranger's PR gets a preview | Fork PRs skip the review, so they never get images or the `preview` label |
+| Unreviewed code stays in a preview | A new push drops the label, so the preview goes until the next passed review |
+| A Slack message starts unwanted work | Claude only works in a private channel, and its branch still needs a PR, a review and your Merge |
 
 **Nothing merges automatically.** Auto-merge is off. Every commit on `main` comes through a PR. `release/test` isn't protected, so anyone with write access could push to it, and today that's only you and the pipeline.
 
@@ -530,7 +552,9 @@ Read any change under `.github/` carefully, because workflows are what can use y
 | Public images on GHCR | Free |
 | Minikube, Helm, Argo CD | Free |
 | Claude reviews and fixes | Included in Pro, and they count against your limits |
-| Chatbot messages | Your API credit |
+| Chatbot messages, including chats in a preview | Your API credit |
+| `@Claude` requests from Slack | Included in Pro, and they count against your limits |
+| Slack workspace | Free plan |
 
 Opus costs $4 per million input tokens and $20 per million output tokens. `claude-haiku-5-5` costs far less, and you can switch to it in `application.yml`. Check that auto-reload is off in console.anthropic.com, so the prepaid credit stays the limit.
 
@@ -548,9 +572,12 @@ These problems are the most useful part of the day, and good material for an int
 | First auto-fix did nothing | No allowed tool could delete a file | Add `git rm` | Allowed tools limit what Claude can do |
 | Review stopped on a fix commit | The commit came from `github-actions`, which wasn't an allowed bot (`Workflow initiated by non-human actor`) | Add it to `allowed_bots` | Check which identity a commit really uses |
 | Fix job reported success with no commit | A denied action doesn't fail the job | A step that checks a commit was pushed | A green job doesn't prove the work happened |
-| New pod failed briefly | Chart arrived before its image | Accepted for test, see section 16 | Chart and image can arrive at different times |
+| New pod failed briefly | Chart arrived before its image | The `release/test` branch delivers both in one commit | Chart and image can arrive at different times |
 | Rollback plan wouldn't work | The old image had no health endpoint | Roll back to a newer image | A chart change can make old images unusable |
 | First startup check did nothing | An unresolved placeholder doesn't stop Spring | Explicit check in code, then tested by hand | Run the failure case, not just the tests |
+| `@Claude` didn't appear in Slack | The app was deactivated in a shared workspace, and only its admins could fix that | A workspace you own | Check who administers a tool before debugging it |
+| Slack request stopped before the PR | The cloud session can push a branch but didn't open a PR, even when asked | `auto-pr.yml` opens it | Automate the step around a limit |
+| A reused image could be deleted | It shares a GHCR version with a release tag | Delete only versions with `pr-` tags alone | Check what else points at something before removing it |
 
 ## 14. Commands you'll need
 
@@ -638,6 +665,8 @@ flowchart LR
     S4 --> S5["5 Cluster"]
     S5 --> S6["6 Frontend"]
     S6 --> S7["7 Auto-fix"]
+    S7 --> S8["8 Slack"]
+    S8 --> S9["9 Previews"]
 ```
 
 ### Stage 0: Prepare
@@ -844,6 +873,60 @@ gh label create claude-fix -R <your-user>/chatbot --color 0f5cc0
 
 **You've arrived when** Claude's fix commit appears on the PR, and the second bug produces the "fix them by hand" comment.
 
+### Stage 8: Slack
+
+1. Create a Slack workspace you own, with a private channel. A shared workspace may need an admin for every step below.
+2. Create an incoming webhook for that channel, and store its URL without pasting it in chat:
+
+```bash
+pbpaste | tr -d '[:space:]' | gh secret set SLACK_WEBHOOK_URL -R <your-user>/chatbot
+```
+
+3. Add `notify.yml`, and `notify-review` to `ci.yml`.
+4. Add the Claude app from the Slack Marketplace. In its Home tab, click **Connect** and set **Routing Mode** to **Code only**.
+5. Connect GitHub and your repo at [claude.ai/code](https://claude.ai/code), then run `/invite @Claude` in the channel.
+6. Create a fine-grained GitHub token for this repo only, with **Pull requests: Read and write**, and store it as the `AUTO_PR_TOKEN` secret.
+7. Add `auto-pr.yml`, and merge it through a PR.
+8. Test it with `@Claude` and a small change.
+
+**You've arrived when** your request becomes a PR without a click, and its progress appears in Slack.
+
+### Stage 9: Previews
+
+1. Create the label:
+
+```bash
+gh label create preview -R <your-user>/chatbot --color 0e8a16
+```
+
+2. Add `ingress.host` and `namespace.create` to the chart, then `preview` and `preview-reset` to `ci.yml`, and `preview-cleanup.yml`. Merge them through a PR.
+3. Create a fine-grained GitHub token for this repo only, with **Pull requests: Read-only**, and store it in the cluster:
+
+```bash
+pbpaste | tr -d '[:space:]' | xargs -I{} kubectl -n argocd create secret generic github-pr-token --from-literal=token={}
+```
+
+4. Install Reflector, then allow it to copy the key Secret:
+
+```bash
+kubectl apply -f deploy/argocd/reflector.yaml
+kubectl -n chatbot annotate secret chatbot-claude \
+  reflector.v1.k8s.emberstack.com/reflection-allowed=true \
+  'reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces=chatbot-pr-[0-9]+' \
+  reflector.v1.k8s.emberstack.com/reflection-auto-enabled=true \
+  'reflector.v1.k8s.emberstack.com/reflection-auto-namespaces=chatbot-pr-[0-9]+'
+```
+
+5. Start the previews:
+
+```bash
+kubectl apply -f deploy/argocd/previews.yaml
+```
+
+6. Open a test PR that changes the frontend. After the review, open `http://pr-<number>.localhost:8088`, then close the PR.
+
+**You've arrived when** the preview shows your change, and its namespace and images disappear after you close the PR.
+
 ## 16. Known gaps
 
 **Before going public**
@@ -860,9 +943,17 @@ gh label create claude-fix -R <your-user>/chatbot --color 0f5cc0
 **Cluster state**
 
 - The backend runs `0.1.0-d40564c` after the rollback test, so the `Chat client ready` log line on `main` isn't deployed yet. The next backend merge moves it forward.
-- The frontend runs `0.1.0-2e78a63` after the demo rollback, so the page says "Chatbot", while `main` says "Software Factory". The next frontend merge moves it forward.
+- Pipeline messages go to `#chatbot-dev` in the DevOps20 workspace, while `@Claude` requests use `#chatbot-test` in `inetcontrol`. A new webhook and a `SLACK_WEBHOOK_URL` update would move the messages.
+
+**Previews**
+
+- Previews use Argo CD's broad `default` project. A team should give them a restricted project.
+- A preview with a backend change hasn't been tested yet.
+- A reused image keeps its `pr-` tag after cleanup, because it's shared with a release.
 
 **Housekeeping**
 
 - Renew `CLAUDE_CODE_OAUTH_TOKEN` within a year.
+- Renew `AUTO_PR_TOKEN` and `github-pr-token` before they expire, after 90 days. When they expire, PRs stop opening automatically and previews stop appearing.
+- `ci-pipeline.png` and `ci-pipeline.html` predate the Slack and preview jobs.
 - Tidy the summary doc's wording: "master", "API key or token" and the `minikube tunnel` advice.
