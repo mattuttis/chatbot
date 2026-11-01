@@ -317,6 +317,8 @@ The review runs on every push, so a PR can post several verdicts. Docs-only PRs 
 
 None of these jobs is part of `all-checks-passed`, so a Slack problem can't block a merge. It only shows as a failed job on the PR.
 
+**Requests from Slack** start with `@Claude` in `#chatbot-test` in the `inetcontrol` workspace. Claude works in a cloud session and pushes a `claude/slack-session-*` branch, but can't open a PR itself. `auto-pr.yml` opens it instead, with the `AUTO_PR_TOKEN` secret, because PRs opened with `GITHUB_TOKEN` don't start CI. After that it's a normal PR: Claude's review, then your Merge.
+
 ## 7. The release pipeline
 
 `release.yml` runs when a merge changes `backend/`, `frontend/` or `deploy/chart/`. It doesn't rerun the tests, because CI already ran them on the PR.
@@ -486,6 +488,7 @@ No secret lives in Git or in an image.
 | `GITHUB_TOKEN` | Temporary token for each run | Created by GitHub | Most jobs | One run |
 | Claude GitHub App | Lets fix commits start CI | Installed on this repo | `claude-fix` | Until you remove it |
 | `SLACK_WEBHOOK_URL` | Lets anyone holding it post to `#chatbot-dev` | GitHub Actions secret | `notify.yml`, `notify-review`, `claude-fix`, `claude-fix-stopped` | Until you remove the webhook |
+| `AUTO_PR_TOKEN` | Opens PRs on `mattuttis/chatbot` | GitHub Actions secret | `auto-pr.yml` | Until it expires |
 
 ## 11. Safety and control
 
