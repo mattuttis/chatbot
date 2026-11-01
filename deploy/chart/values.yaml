@@ -10,3 +10,11 @@ frontend:
     repository: ghcr.io/mattuttis/chatbot-frontend
     tag: ""
   replicas: 1
+
+ingress:
+  # Empty answers on any hostname. A preview sets its own.
+  host: ""
+
+namespace:
+  # On for previews, so deleting the preview also deletes its namespace.
+  create: false

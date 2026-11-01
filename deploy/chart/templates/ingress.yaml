@@ -25,3 +25,6 @@ spec:
                 name: chatbot-frontend
                 port:
                   number: 8080
+      {{- with .Values.ingress.host }}
+      host: {{ . }}
+      {{- end }}
