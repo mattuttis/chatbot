@@ -1,0 +1,24 @@
+name: Auto PR
+
+on:
+  push:
+    branches: ['claude/slack-session-*']
+
+permissions:
+  contents: read
+
+jobs:
+  open-pr:
+    if: ${{ !github.event.deleted }}
+    runs-on: ubuntu-latest
+    steps:
+      # Uses a personal token, because PRs opened with GITHUB_TOKEN don't start CI.
+      - name: Open a PR for the branch
+        env:
+          GH_TOKEN: ${{ secrets.AUTO_PR_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          OPEN=$(gh pr list -R "$GITHUB_REPOSITORY" --head "$BRANCH" --json number --jq length)
+          if [ "$OPEN" != "0" ]; then echo "PR already open"; exit 0; fi
+          gh pr create -R "$GITHUB_REPOSITORY" --base main --head "$BRANCH" --title "${MESSAGE%%$'\n'*}" --body "Opened automatically for Claude's Slack session."
