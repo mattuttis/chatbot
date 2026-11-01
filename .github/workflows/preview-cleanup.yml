@@ -1,0 +1,28 @@
+name: Preview cleanup
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  packages: write
+
+jobs:
+  delete-images:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      # A reused image shares its version with a release tag, so it stays.
+      - name: Delete the PR's images
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          for PACKAGE in chatbot-backend chatbot-frontend; do
+            VERSIONS="users/$OWNER/packages/container/$PACKAGE/versions"
+            gh api --paginate "$VERSIONS" \
+              | jq --arg prefix "pr-$NUMBER-" '.[] | select(.metadata.container.tags | length > 0 and all(startswith($prefix))) | .id' \
+              | while read -r ID; do gh api -X DELETE "$VERSIONS/$ID"; done
+          done
