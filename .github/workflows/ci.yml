@@ -165,6 +165,25 @@ jobs:
             exit 1
           fi
 
+      # CI on Claude's commit waits for approval, so this tells you to go and click.
+      - name: Post the outcome to Slack
+        if: ${{ !cancelled() }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          STATUS: ${{ job.status }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          PR="<$PR_URL|PR #$NUMBER>"
+          if [ "$STATUS" = "success" ]; then
+            TEXT="🔧 Claude pushed a fix on $PR. Click Approve and run"
+          else
+            TEXT="🛑 Claude couldn't fix $PR. Please fix it by hand"
+          fi
+
+          jq -n --arg text "$TEXT" '{text: $text}' \
+            | curl -fsS -H 'Content-Type: application/json' --data @- "$SLACK_WEBHOOK_URL"
+
   claude-fix-stopped:
     needs: claude-review
     if: always() && needs.claude-review.outputs.critical-issues == 'true' && contains(github.event.pull_request.labels.*.name, 'claude-fix')
@@ -177,6 +196,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: gh pr comment "$PR_URL" --body "Claude has already tried to fix this PR and critical issues remain. Please fix them by hand."
+
+      - name: Post to Slack
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          jq -n --arg text "🛑 Claude already tried to fix <$PR_URL|PR #$NUMBER>. Please fix it by hand" '{text: $text}' \
+            | curl -fsS -H 'Content-Type: application/json' --data @- "$SLACK_WEBHOOK_URL"
 
   # Stays out of all-checks-passed, so a Slack problem can't block a merge.
   notify-review:
