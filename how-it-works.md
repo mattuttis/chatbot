@@ -948,7 +948,6 @@ kubectl apply -f deploy/argocd/previews.yaml
 **Previews**
 
 - Previews use Argo CD's broad `default` project. A team should give them a restricted project.
-- A preview with a backend change hasn't been tested yet.
 - A reused image keeps its `pr-` tag after cleanup, because it's shared with a release.
 
 **Housekeeping**
