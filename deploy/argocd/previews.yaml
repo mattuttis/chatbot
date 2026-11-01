@@ -1,0 +1,49 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: chatbot-previews
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - pullRequest:
+        github:
+          owner: mattuttis
+          repo: chatbot
+          tokenRef:
+            secretName: github-pr-token
+            key: token
+          # Only CI adds this label, and only after a passed review.
+          labels:
+            - preview
+        requeueAfterSeconds: 120
+  template:
+    metadata:
+      name: 'chatbot-pr-{{ .number }}'
+      # Removes the preview, and with it the namespace, when the PR closes.
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/mattuttis/chatbot.git
+        targetRevision: '{{ .head_sha }}'
+        path: deploy/chart
+        helm:
+          parameters:
+            - name: backend.image.tag
+              value: 'pr-{{ .number }}-{{ .head_short_sha_7 }}'
+            - name: frontend.image.tag
+              value: 'pr-{{ .number }}-{{ .head_short_sha_7 }}'
+            - name: ingress.host
+              value: 'pr-{{ .number }}.localhost'
+            - name: namespace.create
+              value: 'true'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: 'chatbot-pr-{{ .number }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
