@@ -11,6 +11,7 @@ spec:
     metadata:
       labels:
         app: chatbot-frontend
+        app.kubernetes.io/part-of: chatbot
     spec:
       containers:
         - name: frontend
