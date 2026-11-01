@@ -16,6 +16,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
       review: ${{ steps.filter.outputs.review }}
+      preview: ${{ steps.filter.outputs.preview }}
     steps:
       - uses: dorny/paths-filter@v4
         id: filter
@@ -30,6 +31,10 @@ jobs:
               - 'frontend/**'
               - 'deploy/**'
               - '.github/**'
+            preview:
+              - 'backend/**'
+              - 'frontend/**'
+              - 'deploy/chart/**'
 
   backend-build:
     needs: changes
@@ -231,6 +236,73 @@ jobs:
 
           jq -n --arg text "$TEXT" '{text: $text}' \
             | curl -fsS -H 'Content-Type: application/json' --data @- "$SLACK_WEBHOOK_URL"
+
+  # Builds what changed and reuses the deployed images for the rest.
+  # The preview label then tells Argo CD to deploy the PR.
+  preview:
+    needs: [changes, claude-review]
+    if: needs.claude-review.result == 'success' && needs.changes.outputs.preview == 'true'
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+      pull-requests: write
+    env:
+      IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}
+      BACKEND_CHANGED: ${{ needs.changes.outputs.backend }}
+      FRONTEND_CHANGED: ${{ needs.changes.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Work out the image tag
+        id: image
+        env:
+          NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: echo "tag=pr-$NUMBER-${HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v7
+        if: env.BACKEND_CHANGED == 'true'
+        with:
+          context: backend
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/chatbot-backend:${{ steps.image.outputs.tag }}
+
+      - uses: docker/build-push-action@v7
+        if: env.FRONTEND_CHANGED == 'true'
+        with:
+          context: frontend
+          platforms: linux/arm64
+          push: true
+          tags: ${{ env.IMAGE_PREFIX }}/chatbot-frontend:${{ steps.image.outputs.tag }}
+
+      - name: Reuse the deployed images
+        env:
+          TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          git fetch --depth=1 origin release/test
+          git show FETCH_HEAD:deploy/envs/test/values.yaml > /tmp/values.yaml
+          if [ "$BACKEND_CHANGED" != "true" ]; then
+            DEPLOYED=$(yq '.backend.image.tag' /tmp/values.yaml)
+            docker buildx imagetools create -t "$IMAGE_PREFIX/chatbot-backend:$TAG" "$IMAGE_PREFIX/chatbot-backend:$DEPLOYED"
+          fi
+          if [ "$FRONTEND_CHANGED" != "true" ]; then
+            DEPLOYED=$(yq '.frontend.image.tag' /tmp/values.yaml)
+            docker buildx imagetools create -t "$IMAGE_PREFIX/chatbot-frontend:$TAG" "$IMAGE_PREFIX/chatbot-frontend:$DEPLOYED"
+          fi
+
+      - name: Ask for a preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr edit "$PR_URL" --add-label preview
 
   all-checks-passed:
     needs: [changes, backend-build, frontend-build, claude-review]
