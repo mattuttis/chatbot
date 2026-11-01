@@ -288,6 +288,8 @@ flowchart LR
 | `claude-fix` | Tries one fix | The review found a critical issue, first time on this PR |
 | `claude-fix-stopped` | Asks a person to step in | The review found a critical issue, and the fix was already tried |
 | `notify-review` | Posts the verdict to Slack | After every review |
+| `preview-reset` | Drops the `preview` label | A new push to a PR with that label |
+| `preview` | Builds PR images and adds the `preview` label | After a passed review, if `backend/`, `frontend/` or `deploy/chart/` changed |
 | `all-checks-passed` | The single gate | Always |
 
 **Why one gate job?** A required check that never runs stays pending forever, and the PR can't merge. So `all-checks-passed` always runs, and it accepts skipped jobs. It fails only if a job failed or was cancelled.
@@ -318,6 +320,19 @@ The review runs on every push, so a PR can post several verdicts. Docs-only PRs 
 None of these jobs is part of `all-checks-passed`, so a Slack problem can't block a merge. It only shows as a failed job on the PR.
 
 **Requests from Slack** start with `@Claude` in `#chatbot-test` in the `inetcontrol` workspace. Claude works in a cloud session and pushes a `claude/slack-session-*` branch, but can't open a PR itself. `auto-pr.yml` opens it instead, with the `AUTO_PR_TOKEN` secret, because PRs opened with `GITHUB_TOKEN` don't start CI. After that it's a normal PR: Claude's review, then your Merge.
+
+**Preview environments** give each PR its own running frontend and backend:
+
+1. After a passed review, the `preview` job in `ci.yml` builds the images that changed and reuses the deployed images for the rest. All images get the tag `pr-<number>-<sha>`.
+2. The job adds the `preview` label. PRs from forks skip the review, so they never get it.
+3. The ApplicationSet in `deploy/argocd/previews.yaml` finds labelled PRs and deploys the PR's chart to `chatbot-pr-<number>`.
+4. Reflector copies the `chatbot-claude` Secret into that namespace, so the backend calls the real Claude and uses your API credit.
+5. A new push drops the label through `preview-reset`, so unreviewed code doesn't stay deployed. The preview comes back after the next passed review.
+6. When the PR closes, Argo CD removes the preview and its namespace, and `preview-cleanup.yml` deletes its images. Images that also hold a release tag stay, because a release may still need them.
+
+With the port-forward from section 14 running, open `http://pr-<number>.localhost:8088`.
+
+`deploy/argocd/previews.yaml` and `deploy/argocd/reflector.yaml` aren't synced by Argo CD, so run `kubectl apply` on them after a change. The Secret also needs Reflector's annotations.
 
 ## 7. The release pipeline
 
@@ -489,6 +504,7 @@ No secret lives in Git or in an image.
 | Claude GitHub App | Lets fix commits start CI | Installed on this repo | `claude-fix` | Until you remove it |
 | `SLACK_WEBHOOK_URL` | Lets anyone holding it post to `#chatbot-dev` | GitHub Actions secret | `notify.yml`, `notify-review`, `claude-fix`, `claude-fix-stopped` | Until you remove the webhook |
 | `AUTO_PR_TOKEN` | Opens PRs on `mattuttis/chatbot` | GitHub Actions secret | `auto-pr.yml` | Until it expires |
+| `github-pr-token` | Lets Argo CD read PRs on `mattuttis/chatbot` | Kubernetes Secret in `argocd` | `deploy/argocd/previews.yaml` | Until it expires |
 
 ## 11. Safety and control
 

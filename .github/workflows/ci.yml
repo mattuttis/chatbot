@@ -237,6 +237,19 @@ jobs:
           jq -n --arg text "$TEXT" '{text: $text}' \
             | curl -fsS -H 'Content-Type: application/json' --data @- "$SLACK_WEBHOOK_URL"
 
+  # A new push isn't reviewed yet, so it must not stay deployed as a preview.
+  preview-reset:
+    if: github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'preview') && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Drop the preview label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr edit "$PR_URL" --remove-label preview
+
   # Builds what changed and reuses the deployed images for the rest.
   # The preview label then tells Argo CD to deploy the PR.
   preview:
