@@ -145,7 +145,13 @@ jobs:
           NAME: ${{ github.event.repository.name }}
           NUMBER: ${{ github.event.pull_request.number }}
           SHA: ${{ steps.pushed.outputs.sha }}
+        # A bad entry only skips that reply with a warning, so the other threads still get theirs.
         run: |
+          if ! jq -e 'type == "array"' .claude-replies.json > /dev/null 2>&1; then
+            echo "::warning::.claude-replies.json is not a JSON array, skipping replies"
+            exit 0
+          fi
+
           # Maps each comment id to its thread id, across all pages of threads.
           THREADS=$(gh api graphql --paginate -F owner="$OWNER" -F name="$NAME" -F number="$NUMBER" -f query='
             query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
@@ -166,12 +172,16 @@ jobs:
             BODY=$(jq -r '.body' <<< "$reply")
             if [ "$FIXED" = "true" ]; then BODY="Fixed in $SHA: $BODY"; else BODY="Not changed: $BODY"; fi
 
-            gh api "repos/$REPO/pulls/$NUMBER/comments/$ID/replies" -f body="$BODY" > /dev/null
+            if ! gh api "repos/$REPO/pulls/$NUMBER/comments/$ID/replies" -f body="$BODY" > /dev/null; then
+              echo "::warning::Reply to comment $ID failed"
+              continue
+            fi
 
             THREAD=$(jq -r --arg id "$ID" '.[$id] // empty' <<< "$THREADS")
             if [ "$FIXED" = "true" ] && [ -n "$THREAD" ]; then
               gh api graphql -f threadId="$THREAD" -f query='
-                mutation($threadId: ID!) { resolveReviewThread(input: {threadId: $threadId}) { thread { id } } }' > /dev/null
+                mutation($threadId: ID!) { resolveReviewThread(input: {threadId: $threadId}) { thread { id } } }' > /dev/null \
+                || echo "::warning::Resolving the thread of comment $ID failed"
             fi
           done
 
