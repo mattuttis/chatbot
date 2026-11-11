@@ -642,14 +642,16 @@ kubectl create namespace chatbot
 kubectl create secret generic chatbot-claude -n chatbot --from-literal=api-key="$(op read "<secret reference>")"
 kubectl apply -f deploy/argocd/application.yaml
 kubectl apply -f deploy/argocd/reflector.yaml
-kubectl apply -f deploy/argocd/previews.yaml
-kubectl annotate secret chatbot-claude -n chatbot \
+kubectl -n chatbot annotate secret chatbot-claude \
   reflector.v1.k8s.emberstack.com/reflection-allowed=true \
+  'reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces=chatbot-pr-[0-9]+' \
   reflector.v1.k8s.emberstack.com/reflection-auto-enabled=true \
-  reflector.v1.k8s.emberstack.com/reflection-allowed-namespaces='chatbot-pr-.*'
+  'reflector.v1.k8s.emberstack.com/reflection-auto-namespaces=chatbot-pr-[0-9]+'
+pbpaste | tr -d '[:space:]' | xargs -I{} kubectl -n argocd create secret generic github-pr-token --from-literal=token={}
+kubectl apply -f deploy/argocd/previews.yaml
 ```
 
-Argo CD then deploys everything else from Git. Nothing in the cluster is unique except the Secret, which you recreate from 1Password. The last three commands are only needed for preview environments.
+Argo CD then deploys everything else from Git. Nothing in the cluster is unique except the two Secrets: the Claude key from 1Password, and the preview token from stage 9 (copy it to the clipboard first). The last four commands are only needed for preview environments.
 
 **Check a Secret without showing it**
 
