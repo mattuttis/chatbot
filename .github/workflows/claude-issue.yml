@@ -11,9 +11,14 @@ permissions:
 
 jobs:
   implement:
-    # Only people with triage or write access can add labels, so this needs no extra author check.
-    if: github.event.label.name == 'claude' && github.event.sender.type != 'Bot'
+    # Anyone can open an issue on a public repo, so the issue's author must have write access too,
+    # not only the person who adds the label. Issues from others are ignored.
+    if: >-
+      github.event.label.name == 'claude' &&
+      github.event.sender.type != 'Bot' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     concurrency:
       group: claude-issue-${{ github.event.issue.number }}
     permissions:
@@ -70,15 +75,17 @@ jobs:
             </issue>
 
             Make the smallest change that does what the issue asks, and update or add tests where the code
-            has them. Don't change anything under .github/ or .git/; a push that touches .github/ is rejected.
+            has them. You can't run builds or tests here; CI runs them on the PR, so keep changes simple.
+            Don't change anything under .github/ or .git/; a push that touches .github/ is rejected.
             Commit with a short message that says what changed, as it becomes the PR title. Push with exactly
             `git push origin HEAD:${{ env.BRANCH }}`.
 
             Then comment on the issue with `gh issue comment ${{ github.event.issue.number }}`, saying what you
             changed. If the issue is unclear or you can't do it safely, change nothing and ask in that comment.
           # Push is limited to the issue branch, without force. Edits to .github/ and .git/ are denied.
+          # git diff is allowed only in fixed forms, because options like --output can write files.
           claude_args: |
-            --allowedTools "Edit,Write,Read,Glob,Grep,Bash(git add:*),Bash(git rm:*),Bash(git commit:*),Bash(git push origin HEAD:${{ env.BRANCH }}),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(gh issue view:*),Bash(gh issue comment:*)"
+            --allowedTools "Edit,Write,Read,Glob,Grep,Bash(git add:*),Bash(git rm:*),Bash(git commit:*),Bash(git push origin HEAD:${{ env.BRANCH }}),Bash(git status:*),Bash(git diff),Bash(git diff --cached),Bash(git diff --stat),Bash(gh issue view:*),Bash(gh issue comment:*)"
             --disallowedTools "Edit(.github/**),Write(.github/**),Edit(.git/**),Write(.git/**)"
 
       # The action can succeed without pushing anything, for example when Claude asks a question instead.
@@ -93,9 +100,10 @@ jobs:
             exit 1
           fi
 
-          # A second guard, in case the hook was bypassed.
+          # A second guard, in case the hook was bypassed. Deleting the branch also closes any PR for it.
           if git diff --name-only "$START_SHA" FETCH_HEAD | grep -q '^\.github/'; then
-            gh issue comment "$NUMBER" -R "$GITHUB_REPOSITORY" --body "⚠️ Claude's push changed files under .github/. Please review the PR carefully before merging."
+            git push -q origin --delete "$BRANCH"
+            gh issue comment "$NUMBER" -R "$GITHUB_REPOSITORY" --body "⚠️ Claude's push changed files under .github/, so its branch was deleted. Nothing was merged."
             exit 1
           fi
 
