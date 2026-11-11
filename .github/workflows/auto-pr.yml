@@ -2,7 +2,7 @@ name: Auto PR
 
 on:
   push:
-    branches: ['claude/slack-session-*']
+    branches: ['claude/slack-session-*', 'claude/issue-*']
 
 permissions:
   contents: read
@@ -21,4 +21,14 @@ jobs:
         run: |
           OPEN=$(gh pr list -R "$GITHUB_REPOSITORY" --head "$BRANCH" --json number --jq length)
           if [ "$OPEN" != "0" ]; then echo "PR already open"; exit 0; fi
-          gh pr create -R "$GITHUB_REPOSITORY" --base main --head "$BRANCH" --title "${MESSAGE%%$'\n'*}" --body "Opened automatically for Claude's Slack session."
+
+          # Issue branches close their issue on merge.
+          if [[ "$BRANCH" =~ ^claude/issue-([0-9]+)$ ]]; then
+            BODY="Opened automatically for Claude's work on #${BASH_REMATCH[1]}.
+
+          Closes #${BASH_REMATCH[1]}"
+          else
+            BODY="Opened automatically for Claude's Slack session."
+          fi
+
+          gh pr create -R "$GITHUB_REPOSITORY" --base main --head "$BRANCH" --title "${MESSAGE%%$'\n'*}" --body "$BODY"
