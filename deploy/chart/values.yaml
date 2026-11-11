@@ -12,8 +12,9 @@ frontend:
   replicas: 1
 
 ingress:
-  # Empty answers on any hostname. A preview sets its own.
-  host: ""
+  # Only this hostname reaches the app, so unknown preview names get a 404. A preview sets its own.
+  # Empty would answer on any hostname.
+  host: localhost
 
 namespace:
   # On for previews, so deleting the preview also deletes its namespace.
