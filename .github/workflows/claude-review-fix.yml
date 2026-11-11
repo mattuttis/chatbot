@@ -31,6 +31,11 @@ jobs:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
 
+      # A queued run may start after an earlier one pushed, so compare against what this run checked out.
+      - name: Remember the starting commit
+        id: start
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Collect the review comments
         id: review
         env:
@@ -39,13 +44,15 @@ jobs:
           NUMBER: ${{ github.event.pull_request.number }}
           REVIEW_ID: ${{ github.event.review.id }}
           REVIEW_BODY: ${{ github.event.review.body }}
+        # A random delimiter, so review text can't end the output early.
         run: |
+          DELIM="EOF_$(uuidgen)"
           {
-            echo "comments<<REVIEW_EOF"
+            echo "comments<<$DELIM"
             echo "Overall comment: ${REVIEW_BODY:-(none)}"
             gh api "repos/$REPO/pulls/$NUMBER/reviews/$REVIEW_ID/comments" --paginate \
               --jq '.[] | "\n- \(.path) line \(.line // .original_line): \(.body)"'
-            echo "REVIEW_EOF"
+            echo "$DELIM"
           } >> "$GITHUB_OUTPUT"
 
       # Uses the Claude GitHub App's token, because commits pushed with GITHUB_TOKEN don't start CI.
@@ -60,11 +67,12 @@ jobs:
             ${{ steps.review.outputs.comments }}
 
             Address each comment with the smallest change that works. Don't change anything under .github/.
-            Commit the changes and push them to the branch ${{ github.head_ref }}. Then post a short summary
+            Commit the changes and push them with exactly `git push origin HEAD:${{ github.head_ref }}`. Then post a short summary
             with `gh pr comment`, listing each comment and what you did. If a comment is unclear or you
             can't address it safely, leave it and say so in the summary.
+          # Push is limited to the PR branch, without force.
           claude_args: |
-            --allowedTools "Edit,Write,Read,Glob,Grep,Bash(git add:*),Bash(git rm:*),Bash(git commit:*),Bash(git push:*),Bash(git status:*),Bash(git diff:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
+            --allowedTools "Edit,Write,Read,Glob,Grep,Bash(git add:*),Bash(git rm:*),Bash(git commit:*),Bash(git push origin HEAD:${{ github.head_ref }}),Bash(git status:*),Bash(git diff:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
 
       # The action can succeed without pushing anything, for example after a denied tool.
       - name: Check that a fix was pushed
@@ -72,10 +80,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           HEAD_REF: ${{ github.head_ref }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          START_SHA: ${{ steps.start.outputs.sha }}
         run: |
           git fetch -q origin "$HEAD_REF"
-          if [ "$(git rev-parse FETCH_HEAD)" = "$HEAD_SHA" ]; then
+          if [ "$(git rev-parse FETCH_HEAD)" = "$START_SHA" ]; then
             gh pr comment "$PR_URL" --body "Claude didn't push any changes for this review. Please check its comment or fix it by hand."
             exit 1
           fi
