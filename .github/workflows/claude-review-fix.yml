@@ -34,7 +34,10 @@ jobs:
       # A queued run may start after an earlier one pushed, so compare against what this run checked out.
       - name: Remember the starting commit
         id: start
-        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          # Claude writes its per-comment replies here; git must never commit it.
+          echo ".claude-replies.json" >> .git/info/exclude
 
       - name: Collect the review comments
         id: review
@@ -51,7 +54,7 @@ jobs:
             echo "comments<<$DELIM"
             echo "Overall comment: ${REVIEW_BODY:-(none)}"
             gh api "repos/$REPO/pulls/$NUMBER/reviews/$REVIEW_ID/comments" --paginate \
-              --jq '.[] | "\n- \(.path) line \(.line // .original_line): \(.body)"'
+              --jq '.[] | "\n- [id \(.id)] \(.path) line \(.line // .original_line): \(.body)"'
             echo "$DELIM"
           } >> "$GITHUB_OUTPUT"
 
@@ -67,12 +70,54 @@ jobs:
             ${{ steps.review.outputs.comments }}
 
             Address each comment with the smallest change that works. Don't change anything under .github/.
-            Commit the changes and push them with exactly `git push origin HEAD:${{ github.head_ref }}`. Then post a short summary
-            with `gh pr comment`, listing each comment and what you did. If a comment is unclear or you
-            can't address it safely, leave it and say so in the summary.
+            Commit the changes and push them with exactly `git push origin HEAD:${{ github.head_ref }}`.
+            If a comment is unclear or you can't address it safely, leave it.
+
+            Then write `.claude-replies.json` in the repo root with one entry per comment that has an id:
+            [{"id": <comment id>, "fixed": true or false, "body": "<one or two sentences: what you changed, or why not>"}]
+            A later step posts these as replies in each thread. Finally post a short overall summary with `gh pr comment`.
           # Push is limited to the PR branch, without force.
           claude_args: |
             --allowedTools "Edit,Write,Read,Glob,Grep,Bash(git add:*),Bash(git rm:*),Bash(git commit:*),Bash(git push origin HEAD:${{ github.head_ref }}),Bash(git status:*),Bash(git diff:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
+
+      # Replies in each comment's thread, and resolves the threads Claude fixed.
+      - name: Reply to the review comments
+        if: ${{ !cancelled() && hashFiles('.claude-replies.json') != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+          NAME: ${{ github.event.repository.name }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          git fetch -q origin "$HEAD_REF"
+          SHA=$(git rev-parse --short FETCH_HEAD)
+
+          # Maps each comment id to its thread id, for resolving.
+          THREADS=$(gh api graphql -F owner="$OWNER" -F name="$NAME" -F number="$NUMBER" -f query='
+            query($owner: String!, $name: String!, $number: Int!) {
+              repository(owner: $owner, name: $name) {
+                pullRequest(number: $number) {
+                  reviewThreads(first: 100) { nodes { id comments(first: 1) { nodes { databaseId } } } }
+                }
+              }
+            }' --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | {key: (.comments.nodes[0].databaseId | tostring), value: .id}] | from_entries')
+
+          jq -c '.[]' .claude-replies.json | while read -r reply; do
+            ID=$(jq -r '.id' <<< "$reply")
+            FIXED=$(jq -r '.fixed' <<< "$reply")
+            BODY=$(jq -r '.body' <<< "$reply")
+            if [ "$FIXED" = "true" ]; then BODY="Fixed in $SHA: $BODY"; else BODY="Not changed: $BODY"; fi
+
+            gh api "repos/$REPO/pulls/$NUMBER/comments/$ID/replies" -f body="$BODY" > /dev/null
+
+            THREAD=$(jq -r --arg id "$ID" '.[$id] // empty' <<< "$THREADS")
+            if [ "$FIXED" = "true" ] && [ -n "$THREAD" ]; then
+              gh api graphql -f threadId="$THREAD" -f query='
+                mutation($threadId: ID!) { resolveReviewThread(input: {threadId: $threadId}) { thread { id } } }' > /dev/null
+            fi
+          done
 
       # The action can succeed without pushing anything, for example after a denied tool.
       - name: Check that a fix was pushed
