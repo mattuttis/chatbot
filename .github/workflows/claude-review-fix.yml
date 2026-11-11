@@ -110,7 +110,7 @@ jobs:
             A later step posts these as replies in each thread. Finally post a short overall summary with `gh pr comment`.
           # Push is limited to the PR branch, without force. Edits to .github/ and .git/ are denied.
           claude_args: |
-            --allowedTools "Edit,Write,Read,Glob,Grep,Bash(git add:*),Bash(git rm:*),Bash(git commit:*),Bash(git push origin HEAD:${{ steps.branch.outputs.name }}),Bash(git status:*),Bash(git diff:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
+            --allowedTools "Edit,Write,Read,Glob,Grep,Bash(git add:*),Bash(git rm:*),Bash(git commit:*),Bash(git push origin HEAD:${{ steps.branch.outputs.name }}),Bash(git status:*),Bash(git diff),Bash(git diff --cached),Bash(git diff --stat),Bash(gh pr view:*),Bash(gh pr comment:*)"
             --disallowedTools "Edit(.github/**),Write(.github/**),Edit(.git/**),Write(.git/**)"
 
       # The action can succeed without pushing anything, for example after a denied tool.
