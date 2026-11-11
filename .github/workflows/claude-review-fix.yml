@@ -1,0 +1,99 @@
+name: Claude review fix
+
+# A human review whose overall comment mentions @claude asks Claude to fix the comments in it.
+# "Request changes" isn't required, because GitHub doesn't offer it on your own PRs.
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+
+jobs:
+  fix:
+    # Only reviews from people with write access, never from bots, and not on fork PRs (no secrets there).
+    if: >-
+      contains(github.event.review.body, '@claude') &&
+      github.event.review.user.type != 'Bot' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association) &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    # One fix per PR at a time; a newer review waits for the running one.
+    concurrency:
+      group: claude-review-fix-${{ github.event.pull_request.number }}
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Collect the review comments
+        id: review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          REVIEW_ID: ${{ github.event.review.id }}
+          REVIEW_BODY: ${{ github.event.review.body }}
+        run: |
+          {
+            echo "comments<<REVIEW_EOF"
+            echo "Overall comment: ${REVIEW_BODY:-(none)}"
+            gh api "repos/$REPO/pulls/$NUMBER/reviews/$REVIEW_ID/comments" --paginate \
+              --jq '.[] | "\n- \(.path) line \(.line // .original_line): \(.body)"'
+            echo "REVIEW_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      # Uses the Claude GitHub App's token, because commits pushed with GITHUB_TOKEN don't start CI.
+      - name: Claude fix
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            A reviewer requested changes on pull request #${{ github.event.pull_request.number }}
+            in ${{ github.repository }}. These are their comments:
+
+            ${{ steps.review.outputs.comments }}
+
+            Address each comment with the smallest change that works. Don't change anything under .github/.
+            Commit the changes and push them to the branch ${{ github.head_ref }}. Then post a short summary
+            with `gh pr comment`, listing each comment and what you did. If a comment is unclear or you
+            can't address it safely, leave it and say so in the summary.
+          claude_args: |
+            --allowedTools "Edit,Write,Read,Glob,Grep,Bash(git add:*),Bash(git rm:*),Bash(git commit:*),Bash(git push:*),Bash(git status:*),Bash(git diff:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
+
+      # The action can succeed without pushing anything, for example after a denied tool.
+      - name: Check that a fix was pushed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch -q origin "$HEAD_REF"
+          if [ "$(git rev-parse FETCH_HEAD)" = "$HEAD_SHA" ]; then
+            gh pr comment "$PR_URL" --body "Claude didn't push any changes for this review. Please check its comment or fix it by hand."
+            exit 1
+          fi
+
+      - name: Post the outcome to Slack
+        if: ${{ !cancelled() }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          STATUS: ${{ job.status }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          PR="<$PR_URL|PR #$NUMBER>"
+          if [ "$STATUS" = "success" ]; then
+            TEXT="🔧 Claude addressed your review on $PR. Click Approve and run"
+          else
+            TEXT="🛑 Claude couldn't address your review on $PR"
+          fi
+
+          jq -n --arg text "$TEXT" '{text: $text}' \
+            | curl -fsS -H 'Content-Type: application/json' --data @- "$SLACK_WEBHOOK_URL"
